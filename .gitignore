@@ -1,0 +1,6 @@
+# .gitignore फाइल
+.env
+__pycache__/
+*.pyc
+.streamlit/config.toml
+*.db
