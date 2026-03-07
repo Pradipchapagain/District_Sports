@@ -8,4 +8,5 @@ python-dotenv
 reportlab
 streamlit-autorefresh
 streamlit-cookies-controller
-threading
+plotly
+altair
