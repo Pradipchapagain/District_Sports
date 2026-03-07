@@ -5,6 +5,8 @@ from datetime import datetime
 import database as db
 import psycopg2.extras
 from config import CONFIG 
+import threading
+import os
 
 # ==========================================
 # 🛑 १. CONFIGURATION FROM CENTRAL CONFIG
@@ -176,3 +178,45 @@ def clear_live_state() -> None:
             conn.commit()
     finally:
         conn.close()
+
+
+def _save_state(key: str, data: dict) -> None:
+    """लोकलमा सेभ गर्ने र इन्टरनेट भए क्लाउडमा पनि पठाउने (Dual-Write)"""
+    json_data = json.dumps(data, ensure_ascii=False)
+    query = """
+        INSERT INTO system_states (state_key, state_data, updated_at) 
+        VALUES (%s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (state_key) DO UPDATE 
+        SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP
+    """
+    
+    # १. प्राथमिक DB मा सेभ गर्ने (ल्यापटपमा छ भने ल्यापटपमै सेभ हुन्छ, जुन अल्ट्रा-फास्ट हुन्छ)
+    primary_conn = db.get_connection()
+    if primary_conn:
+        try:
+            with primary_conn.cursor() as cur:
+                cur.execute(query, (key, json_data))
+                primary_conn.commit()
+        except Exception as e:
+            logging.error(f"Primary DB Error: {e}")
+        finally:
+            primary_conn.close()
+
+    # २. ब्याकग्राउन्डमा क्लाउडमा पठाउने (यदि हामी लोकल मोडमा छौं भने)
+    if os.getenv("APP_MODE") == "LOCAL":
+        def sync_to_cloud():
+            cloud_conn = db.get_cloud_connection()
+            if cloud_conn:
+                try:
+                    with cloud_conn.cursor() as cur:
+                        cur.execute(query, (key, json_data))
+                        cloud_conn.commit()
+                except Exception:
+                    pass # इन्टरनेट नभए वा क्लाउड डाउन भए पनि खेल रोकिँदैन
+                finally:
+                    cloud_conn.close()
+        
+        # यो कोडले स्कोर अपडेट गर्दा स्क्रिनलाई 'Hang' हुन दिँदैन
+        thread = threading.Thread(target=sync_to_cloud)
+        thread.daemon = True
+        thread.start()
