@@ -1,232 +1,178 @@
 import json
-import time
+import logging
+from typing import Optional, Any, Dict, List
+from datetime import datetime
 import database as db
-import psycopg2
+import psycopg2.extras
+from config import CONFIG 
 
 # ==========================================
-# 🛠️ Helper Function for Database State
+# 🛑 १. CONFIGURATION FROM CENTRAL CONFIG
 # ==========================================
-def _save_state(key, data_dict):
-    """कुनै पनि लाइभ स्टेटलाई PostgreSQL को JSONB मा सेभ गर्ने"""
-    conn = db.get_connection()
-    c = conn.cursor()
-    # 💡 PostgreSQL: UPSERT logic (Insert or Update)
-    c.execute("""
-        INSERT INTO system_states (state_key, state_data, updated_at) 
-        VALUES (%s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (state_key) DO UPDATE 
-        SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP
-    """, (key, json.dumps(data_dict, ensure_ascii=False)))
-    conn.commit()
-    c.close()
-    conn.close()
+EXPIRE_TIMES = CONFIG.get('EXPIRE_TIMES', {})
 
-def _get_state(key, expire_seconds=None):
-    """डेटाबेसबाट स्टेट पढ्ने र समय नाघेको छ भने नदेखाउने"""
-    conn = db.get_connection()
-    c = conn.cursor()
-    c.execute("SELECT state_data, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - updated_at)) FROM system_states WHERE state_key = %s", (key,))
-    row = c.fetchone()
-    c.close()
-    conn.close()
+# ==========================================
+# 🛠️ २. CORE STATE ENGINE (Optimized & Robust)
+# ==========================================
+
+def _get_state(key: str, expire_seconds: Optional[int] = None) -> Optional[Any]:
+    """स्टेट पढ्ने, समय नाघेको भए हटाउने र JSON डिकोड गर्ने।"""
     
-    if row:
-        data, age_seconds = row[0], row[1]
-        # यदि एक्स्पायर हुने समय तोकिएको छ र त्यो पार भयो भने None फर्काउने
-        if expire_seconds and age_seconds > expire_seconds:
-            _clear_state(key)
-            return None
-        return data if isinstance(data, dict) else json.loads(data)
-    return None
+    # यदि प्यारामिटरमा छैन भने CONFIG बाट लिने
+    if expire_seconds is None:
+        expire_seconds = EXPIRE_TIMES.get(key)
 
-def _clear_state(key):
-    """म्याच सकिएपछि वा रिसेट गर्दा डेटाबेसबाट हटाउने"""
     conn = db.get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM system_states WHERE state_key = %s", (key,))
-    conn.commit()
-    c.close()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT state_data, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - updated_at)) 
+                FROM system_states WHERE state_key = %s
+            """, (key,))
+            row = cur.fetchone()
+            
+            if not row:
+                return None
+            
+            data, age_seconds = row
+            
+            # 🔍 सुधार: 'if not None' प्रयोग गर्दा ० सेकेन्ड एक्सपायरीले पनि काम गर्छ
+            if expire_seconds is not None and age_seconds > expire_seconds:
+                _clear_state(key)
+                return None
+            
+            if isinstance(data, (dict, list)):
+                return data
+            return json.loads(data) if data else None
+    except Exception as e:
+        logging.error(f"Error fetching state '{key}': {e}")
+        return None
+    finally:
+        conn.close()
 
+def _save_state(key: str, data: Any) -> None:
+    """PostgreSQL JSONB मा सेभ गर्ने (UPSERT)"""
+    conn = db.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO system_states (state_key, state_data, updated_at) 
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (state_key) DO UPDATE 
+                SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP
+            """, (key, json.dumps(data, ensure_ascii=False)))
+            conn.commit()
+    except Exception as e:
+        logging.error(f"Error saving state '{key}': {e}")
+    finally:
+        conn.close()
+
+def _clear_state(key: str) -> None:
+    conn = db.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM system_states WHERE state_key = %s", (key,))
+            conn.commit()
+    finally:
+        conn.close()
 
 # ==========================================
-# १. प्रत्यक्ष खेल (Live Match Score) को स्टेट
+# 🥋 ३. LIVE SCORE & ANNOUNCEMENTS
 # ==========================================
-def update_live_match(event_name, p_a_name, p_b_name, score_a, score_b, status="Playing", 
-                      pen_a=None, pen_b=None, senshu=None, timer=None, is_kumite=False):
+
+def update_live_match(event_name: str, p_a: str, p_b: str, score_a: Any, score_b: Any, **kwargs) -> None:
     data = {
-        "event_name": event_name,
-        "p_a": p_a_name,
-        "p_b": p_b_name,
-        "score_a": score_a,
-        "score_b": score_b,
-        "status": status,
-        "pen_a": pen_a,
-        "pen_b": pen_b,
-        "senshu": senshu,
-        "timer": timer,
-        "is_kumite": is_kumite
+        "event_name": event_name, "p_a": p_a, "p_b": p_b,
+        "score_a": score_a, "score_b": score_b,
+        "status": kwargs.get("status", "Playing"),
+        "timer": kwargs.get("timer", "00:00"),
+        "is_kumite": kwargs.get("is_kumite", False),
+        "pen_a": kwargs.get("pen_a", 0),
+        "pen_b": kwargs.get("pen_b", 0)
     }
     _save_state("live_match", data)
 
-def clear_live_match():
-    _clear_state("live_match")
+def get_live_match() -> Optional[Dict]:
+    return _get_state("live_match")
 
-def get_live_match():
-    # १ घण्टा (3600 सेकेन्ड) भन्दा पुरानो भए नदेखाउने
-    return _get_state("live_match", expire_seconds=3600)
-
-
-# ==========================================
-# २. उद्घोषकको सूचना (Announcement) को स्टेट
-# ==========================================
-def set_announcement(title, subtitle=""):
+def set_announcement(title: str, subtitle: str = "") -> None:
     _save_state("announcement", {"title": title, "subtitle": subtitle})
 
-def clear_announcement():
-    _clear_state("announcement")
-
-def get_announcement():
-    # ३० मिनेट (1800 सेकेन्ड) पछि आफैँ हराउने
-    return _get_state("announcement", expire_seconds=1800)
-
+def get_announcement() -> Optional[Dict]:
+    return _get_state("announcement")
 
 # ==========================================
-# ३. खेल तालिका (Master Schedule) को स्टेट
-# ==========================================
-def save_master_schedule(schedule_list):
-    _save_state("master_schedule", schedule_list)
-
-def get_master_schedule():
-    return _get_state("master_schedule") or []
-
-def trigger_schedule_display(day_name):
-    _save_state("trigger_schedule", {"show_day": day_name})
-
-def clear_schedule_display():
-    _clear_state("trigger_schedule")
-
-def get_schedule_trigger():
-    # ३ मिनेट (180 सेकेन्ड) पछि आफैँ हराउने
-    data = _get_state("trigger_schedule", expire_seconds=180)
-    return data['show_day'] if data else None
-
-
-# ==========================================
-# ४. लाइभ पोडियम (Auto Celebration Screen)
-# ==========================================
-def trigger_podium(event_name, gold_data, silver_data, bronze_data):
-    data = {
-        "event_name": event_name,
-        "gold": gold_data,
-        "silver": silver_data,
-        "bronze": bronze_data
-    }
-    _save_state("live_podium", data)
-
-def clear_podium():
-    _clear_state("live_podium")
-
-def get_podium():
-    # ६० सेकेन्ड (१ मिनेट) पछि आफैँ हराउने
-    return _get_state("live_podium", expire_seconds=60)
-
-
-# ==========================================
-# ५. सिंगल म्याच नतिजा (Single Match Result)
-# ==========================================
-def trigger_match_result(match_title, winner, loser, score_summary):
-    data = {
-        "match_title": match_title,
-        "winner": winner,
-        "loser": loser,
-        "score": score_summary
-    }
-    _save_state("live_match_result", data)
-
-def clear_match_result():
-    _clear_state("live_match_result")
-
-def get_match_result():
-    # ४५ सेकेन्ड पछि आफैँ हराउने
-    return _get_state("live_match_result", expire_seconds=45)
-
-# ==========================================
-# ६. फर्मल कल (Formal Call)
-# ==========================================
-def trigger_call(event_name, round_name, call_type, color_code):
-    data = {
-        "event_name": event_name,
-        "round_name": round_name,
-        "call_type": call_type,
-        "color": color_code
-    }
-    _save_state("formal_call", data)
-
-def clear_call():
-    _clear_state("formal_call")
-
-def get_call():
-    # २० सेकेन्ड पछि आफैँ हराउने
-    return _get_state("formal_call", expire_seconds=20)
-
-
-# ==========================================
-# ८. कराते (Kata) को अन्तिम नतिजा 
-# ==========================================
-def trigger_kata_result(event_name, bout_id, aka_name, ao_name, votes_list, winner):
-    data = {
-        "event_name": event_name,
-        "bout_id": bout_id,
-        "aka_name": aka_name,
-        "ao_name": ao_name,
-        "votes": votes_list, 
-        "winner": winner
-    }
-    _save_state("kata_result", data)
-
-def clear_kata_result():
-    _clear_state("kata_result")
-
-def get_kata_result():
-    # ४५ सेकेन्डपछि आफैँ हराउने
-    return _get_state("kata_result", expire_seconds=45)
-
-# ==========================================
-# 9. उद्घाटन कार्यक्रमको सेडुअल
+# 🏆 ४. PODIUM & RESULTS
 # ==========================================
 
-def get_db_schedules(day_filter=None):
-    """डेटाबेसबाट खेल तालिका तान्ने"""
+def trigger_podium(event_name: str, gold: Dict, silver: Dict, bronze: Any) -> None:
+    _save_state("live_podium", {"event_name": event_name, "gold": gold, "silver": silver, "bronze": bronze})
+
+def get_podium() -> Optional[Dict]:
+    return _get_state("live_podium")
+
+def trigger_match_result(match_title: str, winner: str, loser: str, score: str) -> None:
+    _save_state("live_match_result", {"match_title": match_title, "winner": winner, "loser": loser, "score": score})
+
+def get_match_result() -> Optional[Dict]:
+    return _get_state("live_match_result")
+
+# ==========================================
+# 📡 ५. TICKER & GLOBAL SYNC (Optimized Connections)
+# ==========================================
+
+def get_all_active_matches(conn=None) -> List[Dict]:
+    """सक्रिय म्याचहरू तान्छ (Optionally accepts an existing connection)"""
+    import pandas as pd
+    own_conn = False
+    if conn is None:
+        conn = db.get_connection()
+        own_conn = True
+    try:
+        df = pd.read_sql_query("SELECT * FROM live_match", conn)
+        return df.to_dict(orient='records')
+    except:
+        return []
+    finally:
+        if own_conn:
+            conn.close()
+
+def get_ticker_headlines(conn=None) -> str:
+    """न्यूज हेडलाइनहरू तयार पार्छ (Optionally accepts an existing connection)"""
+    import pandas as pd
+    headlines = []
+    own_conn = False
+    if conn is None:
+        conn = db.get_connection()
+        own_conn = True
+    try:
+        q = """
+            SELECT COALESCE(p.name, t.name) as n, e.name as e 
+            FROM results r JOIN events e ON r.event_code = e.code 
+            LEFT JOIN players p ON r.player_id = p.id 
+            LEFT JOIN teams t ON r.team_id = t.id 
+            WHERE r.medal = 'Gold' ORDER BY r.id DESC LIMIT 2
+        """
+        df = pd.read_sql_query(q, conn)
+        for _, r in df.iterrows():
+            headlines.append(f"🥇 विनर अलर्ट: {r['n']} ले {r['e']} मा स्वर्ण जित्नुभयो")
+    except:
+        pass
+    finally:
+        if own_conn:
+            conn.close()
+            
+    return " | ".join(headlines) if headlines else f"🏆 {CONFIG['EVENT_TITLE_NP']} प्रत्यक्ष प्रसारण"
+
+def clear_live_state() -> None:
     conn = db.get_connection()
-    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    if day_filter:
-        c.execute("SELECT * FROM schedules WHERE day_name = %s ORDER BY schedule_order ASC", (day_filter,))
-    else:
-        c.execute("SELECT * FROM schedules ORDER BY day_name, schedule_order ASC")
-    rows = c.fetchall()
-    c.close(); conn.close()
-    return rows
-# ==========================================
-# १०. सबै लाइभ स्टेट रिसेट गर्ने (Master Reset)
-# ==========================================
-def clear_live_state():
-    conn = db.get_connection()
-    c = conn.cursor()
-    # 💡 'master_schedule' र 'fixtures_data' बाहेक सबै अस्थायी स्टेट हटाउने
-    c.execute("DELETE FROM system_states WHERE state_key NOT IN ('master_schedule') AND state_key NOT LIKE 'fixture_%'")
-    conn.commit()
-    c.close()
-    conn.close()
-
-
-# ==========================================
-# --- FIXTURE SYNC LOGIC (बहु-प्रयोगकर्ताको लागि) ---
-# ==========================================
-def save_fixture(event_code, fixture_type, data_list):
-    """fixture_type: 'heats' वा 'bracket'"""
-    _save_state(f"fixture_{event_code}", {"type": fixture_type, "data": data_list})
-
-def get_fixture(event_code):
-    """टिभीले टाइ-सिट पढ्ने।"""
-    return _get_state(f"fixture_{event_code}")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM system_states 
+                WHERE state_key NOT IN ('master_schedule') 
+                AND state_key NOT LIKE 'fixture_%'
+            """)
+            conn.commit()
+    finally:
+        conn.close()

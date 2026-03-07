@@ -4,32 +4,65 @@ import pandas as pd
 import json
 import hashlib
 import os
+from dotenv import load_dotenv
 import streamlit as st
+
+# .env फाइल लोड गर्ने
+load_dotenv()
+
+# .env बाट URL तान्ने (तपाईंले .env मा यही नाम राख्नुभएको छ भनी सुनिश्चित गर्नुहोस्)
+APP_MODE = os.getenv("APP_MODE", "CLOUD")
+LOCAL_DB_URL = os.getenv("LOCAL_DB_URL")
+NEON_DB_URL = os.getenv("NEON_DB_URL") # 💡 यदि तपाईंले .env मा DATABASE_URL राख्नुभएको छ भने यहाँ त्यही लेख्नुहोला।
+
+def get_connection():
+    """एप कुन मोडमा छ, त्यसकै आधारमा कनेक्सन दिन्छ (स्मार्ट राउटर)"""
+    try:
+        if APP_MODE == "LOCAL" and LOCAL_DB_URL:
+            return psycopg2.connect(LOCAL_DB_URL)
+        else:
+            return psycopg2.connect(NEON_DB_URL)
+    except Exception as e:
+        print(f"🔴 DB Connection Error: {e}")
+        return None
+
+def get_cloud_connection():
+    """सिङ्क गर्नको लागि जबरजस्ती क्लाउड (निओन) मा जोड्ने"""
+    try:
+        return psycopg2.connect(NEON_DB_URL)
+    except Exception as e:
+        print(f"🔴 Cloud DB Error: {e}")
+        return None
+
+def get_local_connection():
+    """सिङ्क गर्नको लागि जबरजस्ती लोकल डाटाबेसमा जोड्ने"""
+    try:
+        return psycopg2.connect(LOCAL_DB_URL)
+    except Exception as e:
+        print(f"🔴 Local DB Error: {e}")
+        return None
 
 
 # ==========================================
 # 🔌 १. CONFIGURATION & CONNECTIONS
 # ==========================================
 
-# नोट: उत्पादन (Production) मा जाँदा 'Environment Variables' प्रयोग गर्नु राम्रो हुन्छ।
-
-DB_CONFIG = {
-    "dbname": "postgres",
-    "user": "postgres.uzmquvpwzfzjqwbzivsh",
-    "password": "TemporaryPassword123!",
-    "host": "aws-0-ap-southeast-1.pooler.supabase.com",
-    "port": "6432"
-}
+# .env फाइल लोड गर्ने
+load_dotenv()
 
 def get_connection():
-
-    """Neon Cloud सँग कनेक्सन"""
-    conn_url = "postgresql://neondb_owner:npg_d2FTQvBN5jUw@ep-nameless-violet-a1x5ur95-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
-   
-    # यसले सिधै कनेक्सन फर्काउँछ, कनेक्ट भएन भने स्पष्ट एरर दिन्छ
-    conn = psycopg2.connect(conn_url)
-    return conn
-
+    """Neon Cloud सँग कनेक्सन गर्ने मुख्य फङ्सन"""
+    # १. पहिले Streamlit Secrets चेक गर्ने (लोकल वा क्लाउड)
+    if "DATABASE_URL" in st.secrets:
+        conn_url = st.secrets["DATABASE_URL"]
+    # २. छैन भने .env फाइल चेक गर्ने
+    else:
+        conn_url = os.getenv("DATABASE_URL")
+    
+    if not conn_url:
+        raise ValueError("DATABASE_URL फेला परेन। कृपया secrets.toml वा .env फाइल चेक गर्नुहोस्।")
+        
+    return psycopg2.connect(conn_url)
 
 # ==========================================
 # 🔑 २. AUTHENTICATION & SECURITY
@@ -370,6 +403,21 @@ def add_official(municipality_id, role, name, phone):
     c.execute("INSERT INTO officials (municipality_id, role, name, phone) VALUES (%s, %s, %s, %s)", (municipality_id, role, name, phone))
     conn.commit(); c.close(); conn.close()
 
+def get_officials(municipality_id):
+    """कुनै निर्दिष्ट पालिकाको अफिसियल (प्रशिक्षक/व्यवस्थापक) को डाटा तान्ने"""
+    import pandas as pd
+    conn = get_connection()
+    try:
+        # PostgreSQL को लागि %s प्रयोग गरिएको छ
+        df = pd.read_sql_query("SELECT * FROM officials WHERE municipality_id = %s", conn, params=(municipality_id,))
+        return df
+    except Exception as e:
+        print(f"Error fetching officials: {e}")
+        return pd.DataFrame() # क्र्यास हुनबाट बचाउन खाली डाटाफ्रेम पठाउने
+    finally:
+        conn.close()
+
+
 def save_match_result(event_code, muni_id, player_id, position, score_dict, medal):
     """खेलको अन्तिम नतिजा (Gold/Silver/Bronze) सेभ गर्छ। (JSON Support सहित)"""
     import json
@@ -389,6 +437,7 @@ def save_match_result(event_code, muni_id, player_id, position, score_dict, meda
         print(f"Result Save Error: {e}")
     finally:
         c.close(); conn.close()
+
 
 # =========================================================
 # ⚙️ ८. SYSTEM SETTINGS & SETUP (The Engine)
@@ -448,13 +497,17 @@ def create_tables():
             "CREATE TABLE IF NOT EXISTS matches (id SERIAL PRIMARY KEY, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, match_no INTEGER NOT NULL, round_name VARCHAR(100), title VARCHAR(255), comp1_muni_id INTEGER REFERENCES municipalities(id), comp2_muni_id INTEGER REFERENCES municipalities(id), winner_muni_id INTEGER REFERENCES municipalities(id), status VARCHAR(50) DEFAULT 'Pending', live_state JSONB DEFAULT '{}'::jsonb, source_match1 INTEGER, source_match2 INTEGER, team1_id INTEGER, team2_id INTEGER, winner_team_id INTEGER)",
             "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, municipality_id INTEGER REFERENCES municipalities(id) NOT NULL, player_id INTEGER REFERENCES players(id) NULL, team_id INTEGER REFERENCES teams(id) NULL, position INTEGER NOT NULL, medal VARCHAR(50), score_details JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
             
-            # ४. प्रणाली र लाइभ अपडेट
+            # ४. मार्शल आर्ट्स विशेष (MA Brackets)
+            "CREATE TABLE IF NOT EXISTS ma_brackets (event_code VARCHAR(50) PRIMARY KEY REFERENCES events(code) ON DELETE CASCADE, draw_json JSONB, byes_json JSONB, progress_json JSONB)",
+
+            # ५. प्रणाली र लाइभ अपडेट
             "CREATE TABLE IF NOT EXISTS system_states (state_key VARCHAR(100) PRIMARY KEY, state_data JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
             "CREATE TABLE IF NOT EXISTS settings (key VARCHAR(100) PRIMARY KEY, value TEXT NOT NULL, description TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
             "CREATE TABLE IF NOT EXISTS officials (id SERIAL PRIMARY KEY, municipality_id INTEGER REFERENCES municipalities(id) ON DELETE CASCADE, role VARCHAR(100), name VARCHAR(255) NOT NULL, phone VARCHAR(50))",
-            "CREATE TABLE IF NOT EXISTS live_match (id SERIAL PRIMARY KEY, event_code VARCHAR(50), bout_id VARCHAR(50), event_name VARCHAR(255), round_name VARCHAR(100), player1 VARCHAR(255), player2 VARCHAR(255), score_a VARCHAR(50) DEFAULT '0', score_b VARCHAR(50) DEFAULT '0', pen_a INTEGER DEFAULT 0, pen_b INTEGER DEFAULT 0, senshu VARCHAR(10), timer VARCHAR(10) DEFAULT '00:00', voting_open INTEGER DEFAULT 0, j1_vote VARCHAR(10), j2_vote VARCHAR(10), j3_vote VARCHAR(10), j4_vote VARCHAR(10), j5_vote VARCHAR(10))"            "CREATE TABLE IF NOT EXISTS schedules (id SERIAL PRIMARY KEY, day_name VARCHAR(50), schedule_time VARCHAR(100), title VARCHAR(255), description TEXT, event_code VARCHAR(50), is_completed INTEGER DEFAULT 0, schedule_order INTEGER)",
+            "CREATE TABLE IF NOT EXISTS live_match (id SERIAL PRIMARY KEY, event_code VARCHAR(50), bout_id VARCHAR(50), event_name VARCHAR(255), round_name VARCHAR(100), player1 VARCHAR(255), player2 VARCHAR(255), score_a VARCHAR(50) DEFAULT '0', score_b VARCHAR(50) DEFAULT '0', pen_a INTEGER DEFAULT 0, pen_b INTEGER DEFAULT 0, senshu VARCHAR(10), timer VARCHAR(10) DEFAULT '00:00', voting_open INTEGER DEFAULT 0, j1_vote VARCHAR(10), j2_vote VARCHAR(10), j3_vote VARCHAR(10), j4_vote VARCHAR(10), j5_vote VARCHAR(10))",
+            "CREATE TABLE IF NOT EXISTS schedules (id SERIAL PRIMARY KEY, day_name VARCHAR(50), schedule_time VARCHAR(100), title VARCHAR(255), description TEXT, event_code VARCHAR(50), is_completed INTEGER DEFAULT 0, schedule_order INTEGER)",
             
-            # ५. अडिट लग (अडिटरको लागि सबैभन्दा महत्त्वपूर्ण)
+            # ६. अडिट लग
             "CREATE TABLE IF NOT EXISTS audit_logs (id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id), action VARCHAR(255), table_name VARCHAR(100), row_id INTEGER, old_value TEXT, new_value TEXT, ip_address VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         ]
 
@@ -474,15 +527,16 @@ def create_tables():
         conn.commit()
         print("✅ Neon Cloud: All Tables & Settings updated successfully!")
         
-        # मास्टर डाटा (Admin र Events) सिडिङ गर्ने
-        seed_admin_user(conn)
-        seed_events(conn)
+        # यी फङ्सनहरू तपाईंसँग पहिल्यै हुनुपर्छ
+        if 'seed_admin_user' in globals(): seed_admin_user(conn)
+        if 'seed_events' in globals(): seed_events(conn)
         
     except Exception as e:
         print(f"❌ Setup Error: {e}")
     finally:
         if 'c' in locals(): c.close()
         if 'conn' in locals(): conn.close()
+        
 
 def create_default_admin():
     """Home.py ले खोजेको एडमिन बनाउने फङ्सन"""
