@@ -194,29 +194,68 @@ with tab4:
 # ==========================================
 with tab5:
     st.header("📜 विजेता प्रमाणपत्र (Print Certificates)")
+    st.info("खेल सम्पन्न भई नतिजा (Results) दर्ता भएका इभेन्टहरूको प्रमाणपत्र यहाँबाट PDF फर्म्याटमा डाउनलोड गर्न सकिन्छ।")
+    
     conn = db.get_connection()
     if conn:
         ev_df = pd.read_sql_query("SELECT code, name, gender FROM events ORDER BY name", conn)
         conn.close()
+        
         if not ev_df.empty:
             ev_dict = {f"{row['name']} ({row['gender']})": row['code'] for _, row in ev_df.iterrows()}
             sel_ev = st.selectbox("प्रमाणपत्र छाप्नको लागि खेल छान्नुहोस्:", ["-- छान्नुहोस् --"] + list(ev_dict.keys()))
+            
             if sel_ev != "-- छान्नुहोस् --":
                 ev_code = ev_dict[sel_ev]
+                
+                # १. भाषा छान्ने रेडियो बटन थपिएको
+                lang_choice = st.radio("प्रमाणपत्रको भाषा छान्नुहोस्:", options=['np', 'en'], format_func=lambda x: "नेपाली (Nepali)" if x == 'np' else "English", horizontal=True)
+                
                 conn = db.get_connection()
+                # २. टिम इभेन्ट हुँदा p.school_name खाली (Null) हुन सक्छ, त्यसैले COALESCE प्रयोग गरिएको छ
                 query = """
-                    SELECT COALESCE(p.name, t.name) as name, p.school_name, r.position as rank
-                    FROM results r LEFT JOIN players p ON r.player_id = p.id LEFT JOIN teams t ON r.team_id = t.id
-                    WHERE r.event_code = %s AND r.position IN (1, 2, 3) ORDER BY r.position
+                    SELECT 
+                        COALESCE(p.name, t.name) as name, 
+                        COALESCE(p.school_name, 'सम्बन्धित विद्यालय/पालिका') as school_name, 
+                        r.position as rank
+                    FROM results r 
+                    LEFT JOIN players p ON r.player_id = p.id 
+                    LEFT JOIN teams t ON r.team_id = t.id
+                    WHERE r.event_code = %s AND r.position IN (1, 2, 3) 
+                    ORDER BY r.position
                 """
                 winners_df = pd.read_sql_query(query, conn, params=(ev_code,))
                 conn.close()
-                if winners_df.empty: st.warning("विजेताहरू तोकिएका छैनन्।")
+                
+                if winners_df.empty: 
+                    st.warning("⚠️ यस खेलको नतिजा हालसम्म प्रणालीमा दर्ता भएको छैन।")
                 else:
-                    st.success(f"✅ जम्मा {len(winners_df)} जना विजेताहरू भेटिए!")
+                    st.success(f"✅ जम्मा {len(winners_df)} जना विजेताहरू (स्वर्ण, रजत, कांस्य) भेटिए!")
                     st.dataframe(winners_df, use_container_width=True)
-                    # if st.button("🚀 PDF डाउनलोड", type="primary"):
-                        # pdf_buffer = generate_certificate_pdf(sel_ev, winners_df) ...
+                    
+                    # ३. PDF जेनेरेट गर्ने र डाउनलोड गर्ने लजिक
+                    if st.button("🚀 PDF प्रमाणपत्र जनरेट गर्नुहोस्", type="primary"):
+                        with st.spinner("PDF बन्दैछ... कृपया पर्खनुहोस्।"):
+                            try:
+                                # अघि बनाएको फङ्सनलाई कल गर्ने
+                                pdf_buffer = generate_certificate_pdf(
+                                    event_name=sel_ev, 
+                                    winners_df=winners_df, 
+                                    language=lang_choice
+                                )
+                                
+                                if pdf_buffer:
+                                    st.download_button(
+                                        label="📥 यहाँ क्लिक गरेर PDF डाउनलोड गर्नुहोस्",
+                                        data=pdf_buffer,
+                                        file_name=f"Certificates_{ev_code}.pdf",
+                                        mime="application/pdf"
+                                    )
+                                    st.balloons()
+                                else:
+                                    st.error("❌ प्रमाणपत्र जनरेट गर्न सकिएन। डाटा खाली हुन सक्छ।")
+                            except Exception as e:
+                                st.error(f"❌ प्राविधिक समस्या आयो: {e}")
 
 # ==========================================
 # 💡 TAB 6: डाउनलोड सेन्टर (Export to CSV)

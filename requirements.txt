@@ -10,3 +10,4 @@ streamlit-autorefresh
 streamlit-cookies-controller
 plotly
 altair
+qrcode[pil]

@@ -7,67 +7,55 @@ import os
 from dotenv import load_dotenv
 import streamlit as st
 
+# ==========================================
+# ⚙️ १. CONFIGURATION & SETUP
+# ==========================================
 # .env फाइल लोड गर्ने
 load_dotenv()
 
-# .env बाट URL तान्ने (तपाईंले .env मा यही नाम राख्नुभएको छ भनी सुनिश्चित गर्नुहोस्)
-APP_MODE = os.getenv("APP_MODE", "CLOUD")
-LOCAL_DB_URL = os.getenv("LOCAL_DB_URL")
-NEON_DB_URL = os.getenv("NEON_DB_URL") # 💡 यदि तपाईंले .env मा DATABASE_URL राख्नुभएको छ भने यहाँ त्यही लेख्नुहोला।
+# एपको मोड: 'LOCAL' वा 'CLOUD'
+APP_MODE = os.getenv("APP_MODE", "LOCAL") 
 
+# स्मार्ट ठेगानाहरू: यदि .env ले काम गरेन भने पछाडिको (Fallback) ठेगाना प्रयोग हुन्छ
+LOCAL_DB_URL = os.getenv("LOCAL_DB_URL", "postgresql://postgres:admin123@localhost:5432/prs_local_db")
+
+# 🚨 यहाँ तल 'तपाईंको_सक्कल_पासवर्ड' को ठाउँमा आफ्नो Neon को सही पासवर्ड राख्न नबिर्सिनुहोला:
+NEON_DB_URL = os.getenv("NEON_DB_URL", "postgresql://neondb_owner:तपाईंको_सक्कल_पासवर्ड@ep-nameless-violet-a1x5ur95.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")
+
+
+# ==========================================
+# 🔌 २. DATABASE CONNECTIONS
+# ==========================================
 def get_connection():
-    """एप कुन मोडमा छ, त्यसकै आधारमा कनेक्सन दिन्छ (स्मार्ट राउटर)"""
+    """एपको मुख्य कनेक्सन: LOCAL मा सेट छ भने लोकल, नत्र क्लाउड"""
     try:
-        if APP_MODE == "LOCAL" and LOCAL_DB_URL:
+        if APP_MODE == "LOCAL":
             return psycopg2.connect(LOCAL_DB_URL)
         else:
             return psycopg2.connect(NEON_DB_URL)
     except Exception as e:
-        print(f"🔴 DB Connection Error: {e}")
+        print(f"🔴 DB CONNECTION ERROR: {e}")
         return None
 
 def get_cloud_connection():
-    """सिङ्क गर्नको लागि जबरजस्ती क्लाउड (निओन) मा जोड्ने"""
+    """क्लाउड (Neon) बाट डाटा तान्नको लागि मात्र प्रयोग हुने विशेष कनेक्सन"""
     try:
         return psycopg2.connect(NEON_DB_URL)
     except Exception as e:
-        print(f"🔴 Cloud DB Error: {e}")
+        print(f"🔴 CLOUD CONNECTION ERROR: {e}")
         return None
 
 def get_local_connection():
-    """सिङ्क गर्नको लागि जबरजस्ती लोकल डाटाबेसमा जोड्ने"""
+    """लोकल डाटाबेसमा मात्र जोड्ने विशेष कनेक्सन (Sync को लागि)"""
     try:
         return psycopg2.connect(LOCAL_DB_URL)
     except Exception as e:
-        print(f"🔴 Local DB Error: {e}")
+        print(f"🔴 LOCAL CONNECTION ERROR: {e}")
         return None
-
-
-# ==========================================
-# 🔌 १. CONFIGURATION & CONNECTIONS
-# ==========================================
-
-# .env फाइल लोड गर्ने
-load_dotenv()
-
-def get_connection():
-    """Neon Cloud सँग कनेक्सन गर्ने मुख्य फङ्सन"""
-    # १. पहिले Streamlit Secrets चेक गर्ने (लोकल वा क्लाउड)
-    if "DATABASE_URL" in st.secrets:
-        conn_url = st.secrets["DATABASE_URL"]
-    # २. छैन भने .env फाइल चेक गर्ने
-    else:
-        conn_url = os.getenv("DATABASE_URL")
     
-    if not conn_url:
-        raise ValueError("DATABASE_URL फेला परेन। कृपया secrets.toml वा .env फाइल चेक गर्नुहोस्।")
-        
-    return psycopg2.connect(conn_url)
-
 # ==========================================
-# 🔑 २. AUTHENTICATION & SECURITY
+# 🔑 ३. AUTHENTICATION & SECURITY
 # ==========================================
-
 def hash_password(password):
     """पासवर्डलाई SHA-256 मा इन्क्रिप्ट गर्छ।"""
     return hashlib.sha256(password.encode()).hexdigest()
@@ -76,17 +64,23 @@ def authenticate_user(username, password):
     """प्रयोगकर्ताको लगइन विवरण जाँच गर्छ।"""
     pwd = hash_password(password)
     conn = get_connection()
-    c = conn.cursor(cursor_factory=extras.RealDictCursor)
-    c.execute("SELECT * FROM users WHERE username=%s AND password_hash=%s", (username, pwd))
-    user = c.fetchone()
-    c.close()
-    conn.close()
-    return user
-
-
+    if not conn:
+        return None
+        
+    try:
+        c = conn.cursor(cursor_factory=extras.RealDictCursor)
+        c.execute("SELECT * FROM users WHERE username=%s AND password_hash=%s", (username, pwd))
+        user = c.fetchone()
+        return user
+    except Exception as e:
+        print(f"🔴 Login Error: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
 
 # ==========================================
-# 🏛️ ३. MASTER DATA HELPERS (Palika & Events)
+# 🏛️ ४. MASTER DATA HELPERS (Palika & Events)
 # ==========================================
 @st.cache_data(ttl=600)
 def get_events():
@@ -213,7 +207,7 @@ def seed_events(conn):
         cursor.close()
 
 # ==========================================
-# 📝 ४. PLAYER & TEAM MANAGEMENT
+# 📝 ५. PLAYER & TEAM MANAGEMENT
 # ==========================================
 def add_player(municipality_id, iemis_id, name, gender, dob_bs, school_name, class_val, guardian_name, contact_no, photo_path=None):
     """नयाँ खेलाडी दर्ता गर्छ र उत्पन्न भएको ID फर्काउँछ।"""
@@ -288,7 +282,7 @@ def update_player_registrations(player_id, municipality_id, event_codes):
     finally:
         c.close(); conn.close()
 # ==========================================
-# 📊 ५. BULK IMPORT & DATA HANDLING
+# 📊 ६. BULK IMPORT & DATA HANDLING
 # ==========================================
 def import_school_data(excel_file, municipality_id):
     """एक्सेल फाइलबाट धेरै खेलाडीहरूको डाटा एकैपटक इम्पोर्ट गर्छ।"""
@@ -350,7 +344,7 @@ def import_school_data(excel_file, municipality_id):
         c.close(); conn.close()
 
 # ==========================================
-# ⚠️ ६. RULE VALIDATIONS (Rule Engine)
+# ⚠️ ७. RULE VALIDATIONS (Rule Engine)
 # ==========================================
 def check_athletics_violations():
     """एथलेटिक्समा ३ भन्दा बढी व्यक्तिगत खेल खेल्ने खेलाडीहरू खोज्छ।"""
@@ -394,7 +388,7 @@ def check_palika_player_quota(max_limit=88):
     df = pd.read_sql_query(q, conn, params=(max_limit,)); conn.close(); return df
 
 # ==========================================
-# 🏅 ७. OFFICIALS & MATCH RESULTS
+# 🏅 ८. OFFICIALS & MATCH RESULTS
 # ==========================================
 def add_official(municipality_id, role, name, phone):
     """पालिकाको तर्फबाट खटिने अफिसियल/रेफ्रीको विवरण राख्छ।"""
@@ -440,7 +434,7 @@ def save_match_result(event_code, muni_id, player_id, position, score_dict, meda
 
 
 # =========================================================
-# ⚙️ ८. SYSTEM SETTINGS & SETUP (The Engine)
+# ⚙️ ९. SYSTEM SETTINGS & SETUP (The Engine)
 # =========================================================
 
 
@@ -523,9 +517,18 @@ def create_tables():
             ('ALLOW_MULTIPLE_TEAM_GAMES', 'False', 'बहु-टिम गेम अनुमति')
             ON CONFLICT (key) DO NOTHING
         """)
+
+        # कुन डाटाबेस र कुन पोर्टमा जोडिएको छ चेक गर्ने
+        c.execute("SELECT current_database(), current_user, inet_server_port();")
+        db_info = c.fetchone()
+        print(f"🔍 ACTUAL CONNECTION: Database: {db_info[0]}, User: {db_info[1]}, Port: {db_info[2]}")
+
+
+
+
         
         conn.commit()
-        print("✅ Neon Cloud: All Tables & Settings updated successfully!")
+        print(f"✅ Database Tables updated successfully in {APP_MODE} mode!")
         
         # यी फङ्सनहरू तपाईंसँग पहिल्यै हुनुपर्छ
         if 'seed_admin_user' in globals(): seed_admin_user(conn)
@@ -593,7 +596,7 @@ def get_audit_logs(limit=100):
     return df
 
 # ==========================================
-# 🚀 EXECUTION BLOCK
+# 🚀 १०. EXECUTION BLOCK
 # ==========================================
 if __name__ == "__main__":
     create_tables()

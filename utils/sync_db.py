@@ -1,5 +1,7 @@
 import pandas as pd
 import database as db
+import json
+import threading
 
 def pull_cloud_to_local():
     """☁️ → 💻 निओन क्लाउडबाट सम्पूर्ण डाटा लोकल डाटाबेसमा तान्ने"""
@@ -39,3 +41,31 @@ def pull_cloud_to_local():
     finally:
         cloud_conn.close()
         local_conn.close()
+
+def push_live_score_bg(match_data):
+    """ब्याकग्राउन्डमा (बिना कुनै रोकावट) लाइभ स्कोर क्लाउडमा पठाउने जादु"""
+    
+    def _push_task():
+        cloud_conn = db.get_cloud_connection()
+        if not cloud_conn:
+            return # इन्टरनेट छैन भने चुपचाप बस्ने, एरर नदेखाउने
+            
+        try:
+            c = cloud_conn.cursor()
+            # हामी क्लाउडको system_states टेबलमा 'live_mat_score' नाममा यो डाटा सेभ गर्छौँ
+            c.execute("""
+                INSERT INTO system_states (state_key, state_data, updated_at) 
+                VALUES ('live_mat_score', %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (state_key) 
+                DO UPDATE SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP
+            """, (json.dumps(match_data),))
+            cloud_conn.commit()
+            c.close()
+        except Exception as e:
+            print(f"☁️ Cloud Push Error: {e}")
+        finally:
+            cloud_conn.close()
+
+    # थ्रेडिङ सुरु गर्ने (यसले तपाईंको ल्यापटपको स्क्रिनलाई रोक्दैन)
+    thread = threading.Thread(target=_push_task)
+    thread.start()

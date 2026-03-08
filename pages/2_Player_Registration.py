@@ -6,7 +6,7 @@ from datetime import date
 
 from config import render_header, render_footer, CONFIG
 from io import BytesIO
-from utils.document_generator import generate_id_cards_docx
+from utils.ID_Card_Generator import generate_id_cards_docx
 
 # ==========================================
 # ⚙️ CONFIG & UTILS
@@ -427,7 +427,7 @@ with tab_view:
 # ==========================================
 with tab_idcard:
     st.header("🪪 परिचयपत्र जेनेरेटर (ID Card)")
-    st.info("यहाँबाट छानिएको पालिकाका सबै खेलाडीहरूको परिचयपत्र Microsoft Word (.docx) फर्म्याटमा डाउनलोड गर्न सकिन्छ।")
+    st.info("यहाँबाट छानिएको पालिकाका सबै खेलाडीहरूको परिचयपत्र फोटो र QR कोडसहित Microsoft Word (.docx) फर्म्याटमा डाउनलोड गर्न सकिन्छ।")
     
     conn = db.get_connection()
     user_role = st.session_state.get('user_role', 'admin') 
@@ -435,7 +435,7 @@ with tab_idcard:
     if user_role == 'admin':
         mun_df = pd.read_sql_query("SELECT id, name FROM municipalities ORDER BY name", conn)
     else:
-        logged_in_mun_id = st.session_state.get('municipality_id', sel_mun_id)
+        logged_in_mun_id = st.session_state.get('municipality_id', sel_mun_id) # sel_mun_id परिभाषित छ भन्ने मान्यता
         mun_df = pd.read_sql_query("SELECT id, name FROM municipalities WHERE id = %s", conn, params=(logged_in_mun_id,))
         
     conn.close()
@@ -462,21 +462,26 @@ with tab_idcard:
             else:
                 st.success(f"✅ {sel_id_mun_name} का जम्मा **{len(p_df)}** जना खेलाडीहरूको परिचयपत्र तयार छ।")
                 
-                if st.button("🚀 परिचयपत्र (ID Cards) डाउनलोड गर्नुहोस्", type="primary"):
-                    with st.spinner("Word File बन्दैछ... कृपया पर्खनुहोस्।"):
+                # यहाँ 'generate_id_cards_docx' फङ्सन import भएको हुनुपर्छ
+                # from utils.id_card_gen import generate_id_cards_docx 
+                
+                if st.button("🚀 परिचयपत्र (ID Cards) जेनेरेट गर्नुहोस्", type="primary"):
+                    with st.spinner("Word File बन्दैछ... कृपया पर्खनुहोस्। (खेलाडी संख्या धेरै भएमा केही समय लाग्न सक्छ)"):
                         try:
-                            doc = generate_id_cards_docx(sel_id_mun_name, p_df)
-                            bio = BytesIO()
-                            doc.save(bio)
+                            # नयाँ फङ्सनले सिधै BytesIO अब्जेक्ट दिन्छ
+                            bio = generate_id_cards_docx(sel_id_mun_name, p_df)
                             
-                            st.download_button(
-                                label="📥 यहाँ क्लिक गरेर Word File डाउनलोड गर्नुहोस्",
-                                data=bio.getvalue(),
-                                file_name=f"ID_Cards_{sel_id_mun_name}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                            )
-                            st.balloons()
+                            if bio:
+                                st.download_button(
+                                    label="📥 यहाँ क्लिक गरेर Word File डाउनलोड गर्नुहोस्",
+                                    data=bio,
+                                    file_name=f"ID_Cards_{sel_id_mun_name}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                )
+                                st.balloons()
+                            else:
+                                st.error("❌ परिचयपत्र जेनेरेट हुन सकेन।")
+                                
                         except Exception as e:
-                            st.error(f"❌ डकुमेन्ट जेनेरेट गर्दा समस्या आयो: {e}")
-
+                            st.error(f"❌ डकुमेन्ट जेनेरेट गर्दा प्राविधिक समस्या आयो: {e}")
 render_footer()

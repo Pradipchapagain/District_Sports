@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import database as db
+st.write(f"Current Mode: {db.APP_MODE}")
+st.write(f"DB URL in use: {db.LOCAL_DB_URL}")
+
 import utils.live_state as ls
 from config import CONFIG, render_header, render_footer
 
@@ -63,14 +66,15 @@ with c_btn:
         controller.remove('auth_user')
         
         # ३. होम पेजमा फर्काउने (st.rerun() को सट्टा st.switch_page())
-        st.switch_page("Home.py")
+        #st.switch_page("Home.py")
+        st.rerun()
 
 st.markdown("<hr style='margin: 15px 0 30px 0;'>", unsafe_allow_html=True)
 
 # ==========================================
 # 📡 ३. डाटा प्रोसेसिङ (Cached & Parameterized)
 # ==========================================
-@st.cache_data(ttl=60)
+#@st.cache_data(ttl=60)
 def fetch_dashboard_data(role, muni_id):
     conn = db.get_connection()
     data = {'num_mun': 0, 'num_events': 0, 'gender': pd.DataFrame(), 'sports': pd.DataFrame(), 'recent': pd.DataFrame(), 'tally': pd.DataFrame()}
