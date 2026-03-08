@@ -3,7 +3,7 @@ import pandas as pd
 import database as db
 import plotly.express as px
 from config import render_header, render_footer
-# from utils.document_generator import generate_certificate_pdf # यो फाइल तयार भएपछि अनकमेन्ट गर्नुहोला
+from utils.certificate_gen import generate_certificate_pdf
 
 # ==========================================
 # ⚙️ पेज कन्फिगरेसन र सेक्युरिटी
