@@ -54,7 +54,20 @@ with c_wel:
     role_color = "#1E88E5" if st.session_state.user_role == 'admin' else "#2E7D32"
     role_text = "प्रणाली प्रशासक (Admin)" if st.session_state.user_role == 'admin' else "पालिका प्रयोगकर्ता"
     st.markdown(f"<h3 style='margin:0;'>👋 स्वागत छ, <span style='color:{role_color};'>{st.session_state.username.upper()}</span> ({role_text})</h3>", unsafe_allow_html=True)
-    st.write(f"Current Mode: {db.APP_MODE}")
+    # 💡 वास्तवमै कुन DB कनेक्टेड छ भनेर चेक गर्ने लजिक
+    actual_mode = "Unknown"
+    conn = db.get_connection()
+    if conn:
+        dsn = conn.get_dsn_parameters()
+        host = dsn.get('host')
+        # यदि होस्टमा 'localhost' वा '127.0.0.1' छ भने त्यो LOCAL हो
+        if host in ['localhost', '127.0.0.1']:
+            actual_mode = "🏠 LOCAL (कम्प्युटर)"
+        else:
+            actual_mode = "🌐 CLOUD (अनलाइन - Neon)"
+        conn.close()
+    
+    st.write(f"📡 **जडान मोड (Connection):** {actual_mode}")
 
 with c_btn:
     if st.button("🚪 सुरक्षित लगआउट", use_container_width=True):
