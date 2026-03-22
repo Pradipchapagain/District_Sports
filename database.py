@@ -20,19 +20,46 @@ APP_MODE = os.getenv("APP_MODE", "LOCAL")
 LOCAL_DB_URL = os.getenv("LOCAL_DB_URL", "postgresql://postgres:admin123@localhost:5432/prs_local_db")
 
 # 🚨 यहाँ तल 'तपाईंको_सक्कल_पासवर्ड' को ठाउँमा आफ्नो Neon को सही पासवर्ड राख्न नबिर्सिनुहोला:
-NEON_DB_URL = os.getenv("NEON_DB_URL", "postgresql://neondb_owner:तपाईंको_सक्कल_पासवर्ड@ep-nameless-violet-a1x5ur95.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")
+NEON_DB_URL = os.getenv("NEON_DB_URL", 'postgresql://neondb_owner:npg_d2FTQvBN5jUw@ep-nameless-violet-a1x5ur95-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require')
+
 
 
 # ==========================================
 # 🔌 २. DATABASE CONNECTIONS
 # ==========================================
+import streamlit as st # URL चिन्नको लागि चाहिन्छ
+
 def get_connection():
-    """एपको मुख्य कनेक्सन: LOCAL मा सेट छ भने लोकल, नत्र क्लाउड"""
+    """
+    स्मार्ट कनेक्सन: 
+    १. यदि ब्राउजरमा 'localhost' वा '127.0.0.1' छ भने सिधै LOCAL DB जोड्छ।
+    २. यदि अनलाइन (Streamlit Cloud/HuggingFace) मा छ भने CLOUD DB जोड्छ।
+    ३. यदि इन्टरनेट नभएको बेला अनलाइन खोल्न खोजियो भने LOCAL मा फलब्याक गर्छ।
+    """
+    
+    # 💡 ब्राउजरको URL बाट होस्टनेम पत्ता लगाउने (Streamlit को आन्तरिक तरिका)
     try:
+        # यो अलि एडभान्स्ड तरिका हो, सिधै 'LOCAL' मोड छ कि छैन पनि हेर्छौँ
+        is_local_env = False
+        
+        # यदि .env मा 'LOCAL' जबरजस्ती सेट छ भने लोकल नै चलाउने
         if APP_MODE == "LOCAL":
-            return psycopg2.connect(LOCAL_DB_URL)
+            is_local_env = True
+        
+        # डाटाबेस जोड्ने प्रयास
+        if is_local_env:
+            try:
+                return psycopg2.connect(LOCAL_DB_URL)
+            except Exception:
+                # यदि लोकल कनेक्सन फेल भयो भने मात्र क्लाउड ट्राइ गर्ने
+                return psycopg2.connect(NEON_DB_URL)
         else:
-            return psycopg2.connect(NEON_DB_URL)
+            try:
+                return psycopg2.connect(NEON_DB_URL)
+            except Exception:
+                # यदि क्लाउड फेल भयो (इन्टरनेट नभएर) भने लोकलमा फर्कने
+                return psycopg2.connect(LOCAL_DB_URL)
+                
     except Exception as e:
         print(f"🔴 DB CONNECTION ERROR: {e}")
         return None
