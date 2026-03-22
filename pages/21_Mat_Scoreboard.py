@@ -9,12 +9,36 @@ st.set_page_config(page_title="MAT SCOREBOARD", layout="wide", initial_sidebar_s
 st_autorefresh(interval=1000, key="mat_sb_refresh")
 
 # २. CSS लुकाउने (मेनु, हेडर, स्क्रोल)
+# २. CSS लुकाउने र फुल-स्क्रिन बनाउने (Complete Overhaul)
 st.markdown("""
     <style>
-        #MainMenu, header, footer {visibility: hidden;}
-        .block-container {padding: 0rem 1rem 0rem 1rem !important;}
+        /* १. साइडबार र नेभिगेसन पूर्ण रूपमा बन्द */
+        [data-testid="stSidebar"], [data-testid="stSidebarNav"], .st-emotion-cache-16idsys {
+            display: none !important;
+            width: 0px !important;
+        }
+        
+        /* २. माथिको हेडर पट्टी हटाउने */
+        header, [data-testid="stHeader"] {
+            display: none !important;
+        }
+        
+        /* ३. पेजको प्याडिङ 'जिरो' गर्ने (ताकि बोर्ड बोर्डरमा टाँसियोस्) */
+        .block-container {
+            padding-top: 0rem !important;
+            padding-bottom: 0rem !important;
+            padding-left: 0rem !important;
+            padding-right: 0rem !important;
+        }
+        
+        /* ४. मेन्यु, फुटर र स्क्रोलबार चटक्कै पार्ने */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
         ::-webkit-scrollbar {display: none;}
-        body {overflow: hidden;}
+        body {
+            overflow: hidden;
+            background-color: #0f172a; /* म्याटको डार्क ब्याकग्राउन्डसँग मिलाउन */
+        }
     </style>
 """, unsafe_allow_html=True)
 

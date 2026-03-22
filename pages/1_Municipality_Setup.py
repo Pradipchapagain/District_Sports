@@ -1,3 +1,4 @@
+# pages\1_Municipality_Setup.py
 import streamlit as st
 import pandas as pd
 import os
@@ -149,20 +150,61 @@ with tab2:
         st.subheader("🔑 पालिकाहरूको लगइन विवरण")
         
         conn = db.get_connection()
-        # 💡 PostgreSQL Query
         q = """
-            SELECT m.id as "ID", m.name as "पालिकाको नाम", u.username as "Username"
+            SELECT m.id as "ID", m.name as "पालिकाको नाम", COALESCE(u.username, 'खाता नबनेको') as "Username"
             FROM municipalities m
             LEFT JOIN users u ON m.id = u.municipality_id
-            WHERE u.role = 'municipality'
             ORDER BY m.id
         """
-        df_cred = pd.read_sql(q, conn)
+        df_cred = pd.read_sql_query(q, conn)
         conn.close()
         
         if df_cred.empty:
             st.warning("कुनै पनि पालिका दर्ता छैन।")
         else:
+            # 💡 जादु: 'खाता नबनेको' वा 'palika_' बाट सुरु भएका युजरनेमहरू खोज्ने
+            needs_fix_df = df_cred[(df_cred['Username'] == 'खाता नबनेको') | (df_cred['Username'].str.startswith('palika_'))]
+            
+            if not needs_fix_df.empty:
+                st.error(f"⚠️ {len(needs_fix_df)} वटा पालिकाको युजरनेम मिलाउन बाँकी छ!")
+                
+                if st.button("🛠️ युजरनेमहरू अटोमेटिक सच्याउनुहोस् (Fix Usernames)", type="primary", use_container_width=True):
+                    import re
+                    conn = db.get_connection()
+                    c = conn.cursor()
+                    try:
+                        pwd_hash = db.hash_password(DEFAULT_PASSWORD)
+                        for _, row in needs_fix_df.iterrows():
+                            m_id = row['ID']
+                            raw_name = str(row['पालिकाको नाम'])
+                            
+                            # 'Municipality' र 'Rural' शब्द हटाउने, अनि बाँकीको अंग्रेजी अक्षर मात्र लिने
+                            clean_name = re.sub(r'(?i)\b(municipality|rural)\b', '', raw_name)
+                            new_user = re.sub(r'[^a-zA-Z]', '', clean_name).lower()
+                            
+                            if not new_user:
+                                new_user = f"muni_{m_id}"
+                                
+                            # यदि खाता नै छैन भने INSERT गर्ने, 'palika_' छ भने UPDATE गर्ने
+                            if row['Username'] == 'खाता नबनेको':
+                                c.execute("""
+                                    INSERT INTO users (username, password_hash, role, municipality_id) 
+                                    VALUES (%s, %s, 'municipality', %s)
+                                """, (new_user, pwd_hash, m_id))
+                            else:
+                                c.execute("UPDATE users SET username = %s WHERE municipality_id = %s", (new_user, m_id))
+                                
+                        conn.commit()
+                        st.success("✅ सबै युजरनेमहरू सफलतापूर्वक पालिकाको नामअनुसार सेट भयो!")
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"त्रुटि: {e} (कृपया नाम जुधेको छ कि छैन चेक गर्नुहोस्)")
+                    finally:
+                        c.close()
+                        conn.close()
+
+            # डाटा देखाउने टेबल
             st.dataframe(df_cred, use_container_width=True, hide_index=True)
             st.caption(f"💡 अटो सेटअपबाट बनेका सबैको सुरुवाती पासवर्ड **{DEFAULT_PASSWORD}** हुन्छ।")
 

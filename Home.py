@@ -1,7 +1,7 @@
 import streamlit as st
 import database as db
 import config
-from streamlit_cookies_controller import CookieController # 👈 नयाँ थपिएको
+from streamlit_cookies_controller import CookieController
 import warnings
 
 # Pandas ले दिने DBAPI2 चेतावनीलाई लुकाउने
@@ -16,23 +16,58 @@ st.set_page_config(page_title="President Running Shield - CMS", page_icon="🏆"
 controller = CookieController()
 
 # ==========================================
-# 🎨 CSS डिजाइन (तपाईंकै पुरानो राम्रो CSS यहाँ छ)
+# 🎨 CSS डिजाइन 
 # ==========================================
 st.markdown("""
     <style>
-        [data-testid="stSidebar"] { background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%); border-right: 2px solid #cbd5e1; }
-        [data-testid="stSidebarNavItems"] > div > ul > li > div {
-            font-weight: 800 !important; font-size: 0.9rem !important; padding: 10px 15px !important;
-            border-radius: 8px !important; margin-top: 20px !important; margin-bottom: 10px !important;
-            text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            background: linear-gradient(90deg, #334155, #475569); color: white !important; border-left: 6px solid #facc15;
-        }
-        [data-testid="stSidebarNavLink"] { background: transparent; border-radius: 8px !important; margin: 4px 10px !important; padding: 8px 15px !important; transition: all 0.2s; font-weight: 500; color: #1e293b; }
-        [data-testid="stSidebarNavLink"]:hover { background: rgba(30, 64, 175, 0.1) !important; color: #1e3a8a !important; transform: translateX(5px); }
-        [data-testid="stSidebarNavLink"][aria-current="page"] { background: linear-gradient(90deg, #1e88e5, #1565c0) !important; color: white !important; font-weight: 700; border-left: 5px solid #fbbf24; box-shadow: 0 5px 10px rgba(30, 136, 229, 0.3); }
-        [data-testid="stSidebarNavLink"][aria-current="page"] svg { fill: white !important; stroke: white !important; }
-        [data-testid="stSidebarNavLink"] span { gap: 10px; }
-        .sidebar-footer { text-align: center; color: #94a3b8; font-size: 0.75rem; margin-top: 30px; padding: 10px; border-top: 1px dashed #cbd5e1; }
+    /* ===== Sidebar Navigation ===== */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border-right: 2px solid #cbd5e1;
+    }
+    [data-testid="stSidebarNavItems"] > div > ul > li > div {
+        font-weight: 700 !important;
+        font-size: 1.1rem !important;
+        padding: 12px 15px !important;
+        margin: 10px 10px 5px 10px !important;
+        border-radius: 8px !important;
+        background: linear-gradient(90deg, #f1f5f9, #ffffff) !important;
+        color: #1e293b !important;
+        border-left: 5px solid #3b82f6;
+        border-bottom: 1px solid #cbd5e1;
+        text-transform: none;
+        letter-spacing: 0.3px;
+        box-shadow: none;
+    }
+    [data-testid="stSidebarNavLink"] {
+        background: transparent !important;
+        border-radius: 8px !important;
+        margin: 2px 10px !important;
+        padding: 8px 15px 8px 20px !important;
+        transition: all 0.2s ease;
+        font-weight: 500;
+        font-size: 1rem !important;
+        color: #334155 !important;
+        border-left: 3px solid transparent;
+    }
+    [data-testid="stSidebarNavLink"]:hover {
+        background: rgba(59, 130, 246, 0.1) !important;
+        color: #1e3a8a !important;
+        border-left-color: #3b82f6;
+        transform: translateX(3px);
+    }
+    [data-testid="stSidebarNavLink"][aria-current="page"] {
+        background: linear-gradient(90deg, #e6f0ff, #ffffff) !important;
+        color: #1e3a8a !important;
+        font-weight: 700;
+        border-left: 5px solid #fbbf24 !important;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+    }
+    [data-testid="stSidebarNavItems"] > div > ul > li:nth-child(4) > div { border-left-color: #e11d48; background: linear-gradient(90deg, #fff1f2, #ffffff); }
+    [data-testid="stSidebarNavItems"] > div > ul > li:nth-child(5) > div { border-left-color: #8b5cf6; background: linear-gradient(90deg, #ede9fe, #ffffff); }
+    .sidebar-footer { text-align: center; color: #94a3b8; font-size: 0.75rem; margin-top: 30px; padding: 10px; border-top: 1px dashed #cbd5e1; }
+    .stButton button { background: white; border: 1px solid #cbd5e1; border-radius: 30px; font-weight: 600; color: #1e293b; transition: all 0.2s; }
+    .stButton button:hover { background: #fee2e2; border-color: #b91c1c; color: #b91c1c; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -44,19 +79,38 @@ except Exception as e:
     st.error(f"Database Error: {e}")
 
 # ==========================================
-# 🔄 ०. अटो-लगइन लजिक (Auto-Login via Cookie)
+# 🔄 ०. अटो-लगइन लजिक (Auto-Login Check)
 # ==========================================
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-    
-    # यदि सेसनमा लगइन छैन भने, ब्राउजरको कुकी चेक गर्ने
+# 📂 Home.py को सुरक्षा घेरा (Security Guard)
+import streamlit as st
+
+# 💡 जादु: यदि URL मा 'TV' वा 'Display' शब्द छ भने लगइन चेक नगर्ने
+current_page = st.session_state.get("active_page", "")
+
+# यी पेजहरूलाई पासवर्ड चाहिँदैन (Public Pages)
+public_pages = ["Live_Display", "Mat_Scoreboard", "VB_Scoreboard", "KB_Scoreboard"]
+
+# यदि पब्लिक पेज होइन र लगइन पनि छैन भने मात्र होममा फर्काउने
+if not any(p in st.query_params.get("page", [""])[0] for p in public_pages):
+    if 'logged_in' not in st.session_state or not st.session_state.logged_in:
+        # लगइन फर्म देखाउने कोड यहाँ हुन्छ...
+        pass
+
+
+# 💡 जादु यहाँ छ: कुकी पढ्न एकैछिन समय लाग्ने भएकोले 'auth_checked' फ्ल्याग राख्ने
+if 'auth_checked' not in st.session_state:
     auth_data = controller.get('auth_user')
     if auth_data and isinstance(auth_data, dict):
         st.session_state.logged_in = True
         st.session_state.user_role = auth_data.get('role')
         st.session_state.username = auth_data.get('username')
         st.session_state.municipality_id = auth_data.get('muni_id')
+    else:
+        st.session_state.logged_in = False
+    
+    st.session_state.auth_checked = True
 
+# डिफल्ट भ्यालुहरू
 if 'user_role' not in st.session_state: st.session_state.user_role = 'Guest'
 if 'username' not in st.session_state: st.session_state.username = None
 if 'municipality_id' not in st.session_state: st.session_state.municipality_id = None
@@ -65,11 +119,6 @@ if 'municipality_id' not in st.session_state: st.session_state.municipality_id =
 # 🔐 १. लगइन पेज (Login UI)
 # ==========================================
 def login_page_ui():
-    # यदि अटो-लगइन भइसक्यो भने यो पेज नदेखाउने, सिधै ड्यासबोर्डमा पठाउने
-    if st.session_state.logged_in:
-        st.switch_page("pages/0_Dashboard.py")
-        return
-
     DISTRICT_NAME = config.CONFIG.get('DEFAULT_DISTRICT', 'Ilam')
     EVENT_NAME = config.CONFIG.get('EVENT_TITLE_NP', 'राष्ट्रपति रनिङ शिल्ड प्रतियोगिता')
     ORGANIZER_NAME = config.CONFIG.get('ORGANIZER_NAME_NP', 'जिल्ला खेलकुद विकास समिति')
@@ -138,6 +187,7 @@ p_kb_tv  = st.Page("pages/23_KB_Scoreboard.py", title="Kabaddi TV", icon="🖥�
 # ==========================================
 pages = {}
 
+# 💡 जादु यहाँ छ: यदि लगइन छ भने ड्यासबोर्डलाई default=True बनाउने
 if not st.session_state.get('logged_in', False):
     pages = {
         "प्रणाली (System)": [p_login],
@@ -145,6 +195,8 @@ if not st.session_state.get('logged_in', False):
         "जज प्यानल (Judges)": [p_judge]  
     }
 elif st.session_state.user_role == 'admin':
+    # लगइन भएपछि ड्यासबोर्ड नै डिफल्ट (पहिलो) पेज हुन्छ
+    p_dash = st.Page("pages/0_Dashboard.py", title="Home Dashboard", icon="🏠", default=True)
     pages = {
         "मुख्य पृष्ठ (Home)": [p_dash, p_rules],
         "सेटअप र दर्ता (Setup & Reg)": [p_evt, p_muni, p_reg, p_bulk, p_val], 
@@ -153,6 +205,7 @@ elif st.session_state.user_role == 'admin':
         "डिस्प्ले स्क्रिन (Displays)": [p_live, p_mat, p_vb_tv, p_kb_tv, p_judge] 
     }
 else:
+    p_dash = st.Page("pages/0_Dashboard.py", title="Home Dashboard", icon="🏠", default=True)
     pages = {
         "मुख्य पृष्ठ (Home)": [p_dash, p_rules],
         "खेलाडी दर्ता (Registration)": [p_reg, p_bulk, p_val], 
@@ -168,7 +221,6 @@ if st.session_state.get('logged_in', False):
         st.markdown("<hr style='margin-bottom:10px;'>", unsafe_allow_html=True)
         st.markdown(f"**Logged in as:** <span style='color:#1E88E5; font-weight:600;'>{st.session_state.username}</span>", unsafe_allow_html=True)
         if st.button("🚪 लगआउट (Logout)", use_container_width=True):
-            # 💡 लगआउट गर्दा कुकी पनि मेटाउने
             controller.remove('auth_user')
             st.session_state.clear()
             st.rerun()

@@ -1,6 +1,7 @@
 # utils\live_state.py
 import json
 import logging
+import time
 from typing import Optional, Any, Dict, List
 from datetime import datetime
 import database as db
@@ -105,20 +106,50 @@ def get_announcement() -> Optional[Dict]:
     return _get_state("announcement")
 
 # ==========================================
-# 🏆 ४. PODIUM & RESULTS
+# 🏆 पोडियम (Podium Celebration)
 # ==========================================
+def trigger_podium(event_name, gold_data=None, silver_data=None, bronze_data=None):
+    """लाइभ टिभीमा पोडियम (विजेता) देखाउन डाटा पठाउने"""
+    import json
+    import database as db
+    
+    podium_state = {
+        "event_name": event_name,
+        "gold": gold_data,
+        "silver": silver_data,
+        "bronze": bronze_data
+    }
+    
+    conn = db.get_connection()
+    if conn:
+        try:
+            c = conn.cursor()
+            # 💡 PostgreSQL Upsert
+            c.execute("""
+                INSERT INTO system_states (state_key, state_data) 
+                VALUES ('podium_data', %s)
+                ON CONFLICT (state_key) 
+                DO UPDATE SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP
+            """, (json.dumps(podium_state),))
+            conn.commit()
+        except Exception as e:
+            print(f"Podium trigger error: {e}")
+        finally:
+            conn.close()
 
-def trigger_podium(event_name: str, gold: Dict, silver: Dict, bronze: Any) -> None:
-    _save_state("live_podium", {"event_name": event_name, "gold": gold, "silver": silver, "bronze": bronze})
-
-def get_podium() -> Optional[Dict]:
-    return _get_state("live_podium")
-
-def trigger_match_result(match_title: str, winner: str, loser: str, score: str) -> None:
-    _save_state("live_match_result", {"match_title": match_title, "winner": winner, "loser": loser, "score": score})
-
-def get_match_result() -> Optional[Dict]:
-    return _get_state("live_match_result")
+def clear_podium():
+    """टिभीबाट पोडियम हटाउने"""
+    import database as db
+    conn = db.get_connection()
+    if conn:
+        try:
+            c = conn.cursor()
+            c.execute("DELETE FROM system_states WHERE state_key = 'podium_data'")
+            conn.commit()
+        except:
+            pass
+        finally:
+            conn.close()
 
 # ==========================================
 # 📡 ५. TICKER & GLOBAL SYNC (Optimized Connections)
@@ -141,31 +172,148 @@ def get_all_active_matches(conn=None) -> List[Dict]:
             conn.close()
 
 def get_ticker_headlines(conn=None) -> str:
-    """न्यूज हेडलाइनहरू तयार पार्छ (Optionally accepts an existing connection)"""
+    """न्यूज हेडलाइनहरू तयार पार्छ (नतिजा, लाइभ म्याच, कल, पदक तालिका, सूचना र फाइनल प्रवेश सहित)"""
     import pandas as pd
+    import utils.live_state as ls
+    from config import CONFIG
+    
     headlines = []
     own_conn = False
     if conn is None:
+        import database as db
         conn = db.get_connection()
         own_conn = True
+        
     try:
-        q = """
-            SELECT COALESCE(p.name, t.name) as n, e.name as e 
-            FROM results r JOIN events e ON r.event_code = e.code 
+        # १. स्वागत र प्रायोजक सन्देश (Welcome Message)
+        event_title = CONFIG.get('EVENT_TITLE_NP', 'राष्ट्रपति रनिङ शिल्ड')
+        headlines.append(f"🙏 {event_title} प्रत्यक्ष प्रसारणमा यहाँलाई हार्दिक स्वागत छ")
+        
+        # २. आपतकालीन सूचना (Announcements)
+        ann = ls.get_announcement()
+        if ann:
+            headlines.append(f"📢 सूचना: {ann['title']} - {ann['subtitle']}")
+            
+        # ३. खेलाडी कल (Call Room)
+        call = ls.get_active_call()
+        if call:
+            headlines.append(f"📣 कल रुम: {call.get('event_name')} ({call.get('round_name')}) का खेलाडीहरूलाई तुरुन्तै सम्पर्क गर्न अनुरोध छ")
+
+        # ४. प्रत्यक्ष खेलहरू (Live Matches)
+        live_matches = ls.get_all_active_matches()
+        for m in live_matches[:3]: 
+            evt_name = str(m.get('event_name', '')).lower()
+            p1 = str(m.get('p_a', '')).split('|')[0]
+            p2 = str(m.get('p_b', '')).split('|')[0]
+            pts_a = m.get('score_a', 0)
+            pts_b = m.get('score_b', 0)
+
+            if 'volleyball' in evt_name or 'भलिबल' in evt_name:
+                curr_set = m.get('current_set', 1)
+                past_sets = m.get('past_sets', []) 
+                match_str = f"🏐 लाइभ भलिबल: {p1} VS {p2} | "
+                set_strs = [f"Set {i+1} [{s}]" for i, s in enumerate(past_sets)]
+                set_strs.append(f"Live Set {curr_set} [{pts_a}-{pts_b}]")
+                headlines.append(match_str + ", ".join(set_strs))
+            elif 'kabaddi' in evt_name or 'कबडी' in evt_name:
+                half = m.get('half', '') 
+                half_txt = f"({half})" if half else ""
+                headlines.append(f"🤼 लाइभ कबडी {half_txt}: {p1} [{pts_a} अंक] VS {p2} [{pts_b} अंक]")
+            elif any(x in evt_name for x in ['karate', 'taekwondo', 'कराते', 'तेक्वान्दो']):
+                round_no = m.get('round', '')
+                round_txt = f"(Round {round_no})" if round_no else ""
+                headlines.append(f"🥋 लाइभ म्याट {round_txt}: 🔴 {p1} [{pts_a}] VS 🔵 {p2} [{pts_b}]")
+            else:
+                headlines.append(f"🔴 प्रत्यक्ष खेल ({m.get('event_name')}): {p1} [{pts_a}] VS {p2} [{pts_b}]")
+
+        # 💡 ५. फाइनल प्रवेश गरेका खेलाडी/पालिका (Final Qualifiers)
+        q_qual = """
+            SELECT r.event_code, e.name as event_name, e.gender, m.name as muni_name, COALESCE(p.name, t.name, 'Relay Team') as player_name
+            FROM results r 
+            JOIN events e ON r.event_code = e.code 
             LEFT JOIN players p ON r.player_id = p.id 
             LEFT JOIN teams t ON r.team_id = t.id 
-            WHERE r.medal = 'Gold' ORDER BY r.id DESC LIMIT 2
+            JOIN municipalities m ON m.id = COALESCE(r.municipality_id, p.municipality_id, t.municipality_id)
+            WHERE r.event_code = (SELECT event_code FROM results WHERE medal='Qualified' ORDER BY id DESC LIMIT 1) 
+            AND r.medal = 'Qualified'
         """
-        df = pd.read_sql_query(q, conn)
-        for _, r in df.iterrows():
-            headlines.append(f"🥇 विनर अलर्ट: {r['n']} ले {r['e']} मा स्वर्ण जित्नुभयो")
-    except:
+        df_qual = pd.read_sql_query(q_qual, conn)
+        if not df_qual.empty:
+            ev_name = df_qual.iloc[0]['event_name']
+            g_label = "Boys" if df_qual.iloc[0]['gender'] in ['Male', 'Boys', 'Boy'] else "Girls"
+            
+            qual_list = []
+            for _, r in df_qual.iterrows():
+                muni = r['muni_name'].replace('Rural Municipality', '').replace('Municipality', '').replace('गाउँपालिका', '').replace('नगरपालिका', '').strip()
+                p_name = r['player_name']
+                # रिले हो भने पालिका मात्र, सिङ्गल हो भने नाम र पालिका दुवै
+                if "Relay" in ev_name or p_name == 'Relay Team':
+                    if muni not in qual_list: qual_list.append(muni)
+                else:
+                    qual_list.append(f"{p_name} ({muni})")
+            
+            # डुप्लिकेट हटाउने र टिकरमा पठाउने
+            qual_list = list(dict.fromkeys(qual_list))
+            headlines.append(f"🎯 फाइनल प्रवेश ({ev_name} - {g_label}): {', '.join(qual_list)} फाइनल चरणमा प्रवेश गर्न सफल हुनुभएको छ!")
+
+        # ६. पछिल्लो नतिजा (Latest Results - Gold, Silver, Bronze)
+        q_results = """
+            SELECT r.event_code, e.name as event_name, e.gender, r.medal, m.name as muni_name, COALESCE(p.name, t.name, 'Relay Team') as player_name
+            FROM results r 
+            JOIN events e ON r.event_code = e.code 
+            LEFT JOIN players p ON r.player_id = p.id 
+            LEFT JOIN teams t ON r.team_id = t.id 
+            JOIN municipalities m ON m.id = COALESCE(r.municipality_id, p.municipality_id, t.municipality_id)
+            WHERE r.event_code IN (SELECT event_code FROM results WHERE medal='Gold' ORDER BY id DESC LIMIT 2)
+        """
+        df_res = pd.read_sql_query(q_results, conn)
+        if not df_res.empty:
+            events = df_res['event_code'].unique()
+            for ev in events:
+                ev_data = df_res[df_res['event_code'] == ev]
+                ev_name = ev_data.iloc[0]['event_name']
+                g_label = "Boys" if ev_data.iloc[0]['gender'] in ['Male', 'Boys', 'Boy'] else "Girls"
+                res_str = f"🏆 नतिजा अपडेट ({ev_name} - {g_label}): "
+                
+                gold_data = ev_data[ev_data['medal'] == 'Gold']
+                if not gold_data.empty:
+                    muni = gold_data.iloc[0]['muni_name'].replace('Rural Municipality', '').replace('Municipality', '').replace('गाउँपालिका', '').replace('नगरपालिका', '').strip()
+                    players = ", ".join(gold_data['player_name'].dropna().unique())
+                    res_str += f"🥇 स्वर्ण: {muni} ({players}) "
+                    
+                silver_data = ev_data[ev_data['medal'] == 'Silver']
+                if not silver_data.empty:
+                    muni = silver_data.iloc[0]['muni_name'].replace('Rural Municipality', '').replace('Municipality', '').replace('गाउँपालिका', '').replace('नगरपालिका', '').strip()
+                    res_str += f"| 🥈 रजत: {muni} "
+                    
+                bronze_data = ev_data[ev_data['medal'] == 'Bronze']
+                if not bronze_data.empty:
+                    munis = ", ".join(bronze_data['muni_name'].replace({'Rural Municipality': '', 'Municipality': '', 'गाउँपालिका': '', 'नगरपालिका': ''}, regex=True).str.strip().unique())
+                    res_str += f"| 🥉 कास्य: {munis}"
+                    
+                headlines.append(res_str)
+
+        # ७. पदक तालिकाको अग्रणी पालिका (Leading Municipality)
+        q_tally = """
+            SELECT m.name as muni_name, SUM(CASE WHEN r.medal='Gold' THEN 1 ELSE 0 END) as golds
+            FROM results r JOIN municipalities m ON r.municipality_id = m.id 
+            GROUP BY m.name ORDER BY golds DESC LIMIT 1
+        """
+        df_tally = pd.read_sql_query(q_tally, conn)
+        if not df_tally.empty and df_tally.iloc[0]['golds'] > 0:
+            lead_muni = df_tally.iloc[0]['muni_name'].replace('Rural Municipality', '').replace('Municipality', '').replace('गाउँपालिका', '').replace('नगरपालिका', '').strip()
+            lead_gold = df_tally.iloc[0]['golds']
+            headlines.append(f"📊 पदक तालिका अपडेट: {lead_muni} {lead_gold} स्वर्णसहित अग्रस्थानमा!")
+            
+    except Exception as e:
+        print(f"Ticker Error: {e}")
         pass
     finally:
         if own_conn:
             conn.close()
             
-    return " | ".join(headlines) if headlines else f"🏆 {CONFIG['EVENT_TITLE_NP']} प्रत्यक्ष प्रसारण"
+    return " &nbsp; ✦ &nbsp; ".join(headlines) if headlines else f"🏆 {CONFIG.get('EVENT_TITLE_NP', 'प्रतियोगिता')} प्रत्यक्ष प्रसारण"
+
 
 def clear_live_state() -> None:
     conn = db.get_connection()
@@ -221,3 +369,232 @@ def _save_state(key: str, data: dict) -> None:
         thread = threading.Thread(target=sync_to_cloud)
         thread.daemon = True
         thread.start()
+
+# ==========================================
+# 📢 खेलाडी कल (Call Room Announcement)
+# ==========================================
+def trigger_call(event_name, round_name, call_type, color_code):
+    """खेलाडीहरूलाई ट्र्याक वा म्याटमा बोलाउनको लागि लाइभ स्क्रिनमा पठाउने र अटोमेटिक अडियो बनाउने"""
+    import json
+    import os
+    import database as db
+    from datetime import datetime
+    
+    # 💡 gTTS लाइब्रेरी तान्ने (यदि इन्स्टल छैन भने terminal मा: pip install gTTS गर्नुहोला)
+    try:
+        from gtts import gTTS
+    except ImportError:
+        gTTS = None
+        print("gTTS library is missing. Audio will not be generated.")
+
+    call_data = {
+        "event_name": event_name,
+        "round_name": round_name,
+        "call_type": call_type,
+        "color_code": color_code,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    # १. पहिले डाटाबेसमा सेभ गर्ने
+    conn = db.get_connection()
+    if conn:
+        try:
+            c = conn.cursor()
+            # 💡 PostgreSQL Upsert (नयाँ छ भने इन्सर्ट, पुरानो छ भने अपडेट)
+            c.execute("""
+                INSERT INTO system_states (state_key, state_data) 
+                VALUES ('active_call', %s)
+                ON CONFLICT (state_key) 
+                DO UPDATE SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP
+            """, (json.dumps(call_data),))
+            conn.commit()
+        except Exception as e:
+            print(f"Call trigger error: {e}")
+        finally:
+            conn.close()
+
+    # २. 💡 नयाँ थपिएको: डाटाबेसमा सेभ भएपछि अडियो जेनेरेट गर्ने
+    if gTTS:
+        try:
+            # बोल्ने म्यासेज तयार गर्ने (अङ्ग्रेजीमा एकदमै प्रोफेसनल सुनिन्छ)
+            # कल टाइपमा FIRST CALL, SECOND CALL जस्ता कुरा हुन्छन्
+            announcement_text = f"Attention please! {call_type}. {call_type} for {event_name}, {round_name}. All players, please report to the call room immediately."
+            
+            # टेक्स्टलाई अडियोमा परिणत गर्ने (slow=False गर्दा नर्मल स्पिडमा बोल्छ)
+            tts = gTTS(text=announcement_text, lang='en', slow=False)
+            
+            # sounds फोल्डर छ कि छैन चेक गर्ने, नभए आफैँ बनाउने
+            os.makedirs("sounds", exist_ok=True)
+            
+            # MP3 फाइल सेभ गर्ने
+            tts.save("sounds/latest_call.mp3")
+            print("✅ Audio generated successfully!")
+        except Exception as e:
+            print(f"Audio Generation Error: {e}")
+
+def clear_call():
+    """टिभीमा अड्किएको कल म्यासेज हटाएर स्क्रिन सफा गर्ने"""
+    import database as db
+    conn = db.get_connection()
+    if conn:
+        try:
+            c = conn.cursor()
+            c.execute("DELETE FROM system_states WHERE state_key = 'active_call'")
+            conn.commit()
+        except Exception as e:
+            pass
+        finally:
+            conn.close()
+
+
+def get_active_call():
+    """टिभीको लागि एक्टिभ कल तान्ने (६० सेकेन्डपछि स्वतः हट्ने प्रणालीसहित)"""
+    import json
+    import database as db
+    from datetime import datetime
+    
+    conn = db.get_connection()
+    if not conn: return None
+    try:
+        c = conn.cursor()
+        c.execute("SELECT state_data FROM system_states WHERE state_key = 'active_call'")
+        row = c.fetchone()
+        if row and row[0]:
+            call_data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+            
+            # 💡 जादु १: घडीको समयअनुसार ६० सेकेन्ड नाघेपछि डाटाबेसबाटै कल उडाइदिने
+            if 'timestamp' in call_data:
+                call_time = datetime.strptime(call_data['timestamp'], "%Y-%m-%d %H:%M:%S")
+                diff_seconds = (datetime.now() - call_time).total_seconds()
+                
+                if diff_seconds > 60:  # ६० सेकेन्ड (१ मिनेट) पछि
+                    clear_call()       # डाटाबेसबाट क्लिन गर्ने
+                    return None        
+                    
+            return call_data
+        return None
+    except Exception as e:
+        print(f"Get Call Error: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_podium():
+    """टिभीमा देखाउनको लागि डाटाबेसबाट पोडियमको नतिजा तान्ने"""
+    import json
+    import database as db
+    
+    conn = db.get_connection()
+    if not conn: return None
+    try:
+        c = conn.cursor()
+        c.execute("SELECT state_data FROM system_states WHERE state_key = 'podium_data'")
+        row = c.fetchone()
+        
+        if row and row[0]:
+            # यदि डाटाबेसले सिधै डिक्सनरी (dict) दियो भने त्यही पठाउने, नत्र JSON बाट रूपान्तरण गर्ने
+            return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        return None
+    except Exception as e:
+        print(f"Get podium error: {e}")
+        return None
+    finally:
+        conn.close()
+
+# ==========================================
+# 📅 खेल तालिका (Schedule Management)
+# ==========================================
+def get_db_schedules(day_filter="All"):
+    """एनाउन्सर र डिस्प्लेको लागि डाटाबेसबाट खेल तालिका तान्ने"""
+    import pandas as pd
+    import database as db
+    
+    conn = db.get_connection()
+    if not conn: 
+        return pd.DataFrame() # कनेक्सन नभए खाली पठाउने
+        
+    try:
+        # यदि 'Day 1', 'Day 2' जस्तो फिल्टर छ भने त्यही दिनको मात्र तान्ने
+        if day_filter and day_filter != "All":
+            q = "SELECT * FROM schedules WHERE day = %s ORDER BY time ASC"
+            df = pd.read_sql_query(q, conn, params=(day_filter,))
+        else:
+            # 'All' छ भने सबै दिनको तान्ने
+            q = "SELECT * FROM schedules ORDER BY day ASC, time ASC"
+            df = pd.read_sql_query(q, conn)
+        return df
+    except Exception as e:
+        # 💡 जादु: यदि 'schedules' टेबल डाटाबेसमा बनिसकेको छैन भने पनि एप क्र्यास हुन नदिने!
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+# ==========================================
+# 📊 म्याच नतिजा (Single Match Result)
+# ==========================================
+def get_match_result():
+    """टिभीमा देखाउनको लागि भर्खरै सकिएको म्याचको नतिजा तान्ने"""
+    import json
+    import database as db
+    
+    conn = db.get_connection()
+    if not conn: return None
+    try:
+        c = conn.cursor()
+        c.execute("SELECT state_data FROM system_states WHERE state_key = 'match_result'")
+        row = c.fetchone()
+        
+        if row and row[0]:
+            return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        return None
+    except Exception as e:
+        print(f"Get match result error: {e}")
+        return None
+    finally:
+        conn.close()
+
+def clear_match_result():
+    """टिभीबाट म्याचको नतिजा हटाउने"""
+    import database as db
+    conn = db.get_connection()
+    if conn:
+        try:
+            c = conn.cursor()
+            c.execute("DELETE FROM system_states WHERE state_key = 'match_result'")
+            conn.commit()
+        except:
+            pass
+        finally:
+            conn.close()
+
+def clear_announcement():
+    """टिभीबाट म्यासेज/सूचना पूर्ण रूपमा हटाउने (१००% काम गर्ने तरिका)"""
+    import database as db
+    conn = db.get_connection()
+    if conn:
+        try:
+            c = conn.cursor()
+            # अपडेट गर्नुभन्दा सिधै डिलिट गर्दा कुनै एरर आउँदैन
+            c.execute("DELETE FROM live_state WHERE key = 'announcement'")
+            conn.commit()
+        except Exception as e:
+            print(f"Error clearing announcement: {e}")
+        finally:
+            conn.close()
+
+# ==========================================
+# 🏃‍♂️ एथलेटिक्स फिक्चर (Heats & Finals)
+# ==========================================
+def save_fixture(event_code: str, stage: str, data: list) -> None:
+    """एथलेटिक्सको हिट्स वा फाइनलको फिक्चर सेभ गर्ने"""
+    # यसले 'fixture_100M_heats' जस्तो युनिक नाम (Key) बनाउँछ
+    key = f"fixture_{event_code}_{stage}"
+    
+    # हामीले माथि नै बनाएको _save_state फङ्सनलाई प्रयोग गर्ने
+    _save_state(key, data)
+
+def get_fixture(event_code: str, stage: str):
+    """सेभ गरिएको फिक्चर डाटाबेसबाट तान्ने"""
+    key = f"fixture_{event_code}_{stage}"
+    return _get_state(key)

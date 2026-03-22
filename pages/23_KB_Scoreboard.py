@@ -9,13 +9,45 @@ import os
 import base64
 
 # ==========================================
-# ⚙️ टिभीको लागि फुल-स्क्रिन सेटिङ
+# ⚙️ १. टिभीको लागि फुल-स्क्रिन सेटिङ
 # ==========================================
 st.set_page_config(page_title="Kabaddi Live TV", layout="wide", initial_sidebar_state="collapsed")
 st_autorefresh(interval=1000, key="kb_tv_refresh")
 
 # ==========================================
-# 🖼️ इमेज क्यासिङ
+# 🧹 २. साइडबार, मेनु र हेडर पूरै लुकाउने CSS
+# ==========================================
+st.markdown("""
+    <style>
+        /* १. साइडबार र नेभिगेसन मेनु पूरै बन्द गर्ने */
+        [data-testid="stSidebar"], [data-testid="stSidebarNav"], .st-emotion-cache-16idsys {
+            display: none !important;
+            width: 0px !important;
+        }
+        /* २. माथिको हेडर (जहाँ मेनु र सेटिङ हुन्छ) हटाउने */
+        header, [data-testid="stHeader"] {
+            display: none !important;
+        }
+        /* ३. पेजको चारैतिरको खाली ठाउँ (Margins) हटाउने */
+        .block-container {
+            padding-top: 0rem !important;
+            padding-bottom: 0rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        /* ४. स्क्रोलबार लुकाउने तर काम गर्ने बनाउने */
+        body {
+            overflow: hidden;
+            background-color: #0E1117;
+        }
+        /* ५. 'Made with Streamlit' र अन्य फुटर हटाउने */
+        footer {visibility: hidden;}
+        #MainMenu {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 🖼️ ३. इमेज क्यासिङ
 # ==========================================
 @st.cache_data
 def get_cached_base64_image(filename):
@@ -24,10 +56,6 @@ def get_cached_base64_image(filename):
         with open(filepath, "rb") as f:
             return base64.b64encode(f.read()).decode()
     return ""
-
-# ==========================================
-# 🎨 उन्नत CSS (लाइनहरू र एनिमेसन थपिएका)
-# ==========================================
 st.markdown("""
     <style>
         #MainMenu, header, footer {visibility: hidden;}

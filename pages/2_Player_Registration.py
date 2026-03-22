@@ -1,3 +1,4 @@
+# pages\2_Player_Registration.py
 import streamlit as st
 import pandas as pd
 import database as db  # 💡 यो अब PostgreSQL सँग जोडिएको database.py हुनुपर्छ
@@ -12,6 +13,19 @@ from utils.ID_Card_Generator import generate_id_cards_docx
 # ⚙️ CONFIG & UTILS
 # ==========================================
 st.set_page_config(page_title="Player & Official Registration", page_icon="📝", layout="wide")
+
+# 💡 यहाँ राख्नुहोस् नयाँ CSS:
+st.markdown("""
+    <style>
+        /* डाटा एडिटरको हेडरलाई लामो बनाउन र लाइन ब्रेक सपोर्ट गर्न */
+        [data-testid="stDataFrameHeaderCell"] {
+            white-space: pre-wrap !important;
+            text-align: center !important;
+            vertical-align: bottom !important;
+            line-height: 1.2 !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # ------------------------------------------
 render_header() 
@@ -78,12 +92,13 @@ else:
 
 st.markdown("---")
 
-tab_off, tab_add, tab_edit, tab_view, tab_idcard = st.tabs([
+tab_off, tab_add, tab_edit, tab_bulk, tab_view, tab_idcard = st.tabs([
     "👨‍💼 १. अफिसियल विवरण", 
     "➕ २. नयाँ खेलाडी दर्ता", 
     "✏️ ३. सच्याउनु/हटाउनु", 
-    "📋 ४. दर्ता सूची",
-    "🪪 ५. परिचयपत्र (ID Card)"
+    "📊 ४. बल्क इडिट (Bulk Edit)",
+    "📋 ५. दर्ता सूची",
+    "🪪 ६. परिचयपत्र (ID Card)"
 ])
 
 # ==========================================
@@ -388,8 +403,165 @@ with tab_edit:
                         st.error(f"डिलिट गर्दा समस्या आयो: {e}")
         conn.close()
 
+
 # ==========================================
-# TAB 4: VIEW ALL PLAYERS
+# TAB 4: BULK EDIT (Excel-like Matrix)
+# ==========================================
+with tab_bulk:
+    st.header("📊 खेलाडीहरूको बल्क इडिट (एक्सेल जस्तै)")
+    st.info("💡 तलको टेबलमा चेकबक्स (☑) मा क्लिक गरेर एकैपटक धेरै खेलाडीको इभेन्ट सच्याउन सकिन्छ। दायाँ सार्दा नाम र IEMIS सधैँ देखिनेछ।")
+    
+    bulk_gender = st.radio("लिङ्ग छान्नुहोस् (Gender):", ["Boys", "Girls"], horizontal=True, key="bulk_edit_gender")
+    
+    conn = db.get_connection()
+    if conn:
+        p_query = "SELECT id, name, iemis_id FROM players WHERE municipality_id=%s AND gender=%s ORDER BY name"
+        df_players = pd.read_sql(p_query, conn, params=(sel_mun_id, bulk_gender))
+        
+        if df_players.empty:
+            st.warning(f"यस पालिकामा {bulk_gender} तर्फ कुनै खेलाडी दर्ता भएका छैनन्।")
+        else:
+            e_query = "SELECT code, name, category, sub_category, event_group FROM events WHERE gender=%s OR gender='Both' ORDER BY category, sub_category, event_group, name"
+            df_events = pd.read_sql(e_query, conn, params=(bulk_gender,))
+            
+            r_query = """
+                SELECT r.player_id, r.event_code 
+                FROM registrations r 
+                JOIN players p ON r.player_id = p.id 
+                WHERE p.municipality_id=%s AND p.gender=%s
+            """
+            df_regs = pd.read_sql(r_query, conn, params=(sel_mun_id, bulk_gender))
+            
+            # 💡 १. क्याटेगोरी अनुसार मुख्य इमोजी
+            def get_cat_icon(cat, sub_cat):
+                if cat == 'Athletics' and sub_cat == 'Track': return '🏃'
+                if cat == 'Athletics' and sub_cat == 'Field': return '🤾'
+                if cat == 'Martial Arts': return '🥋'
+                if cat == 'Team Game' and sub_cat == 'Volleyball': return '🏐'
+                if cat == 'Team Game' and sub_cat == 'Kabaddi': return '🤼'
+                return '🏅'
+
+            # 💡 २. लामो नामलाई छोटो (Short Name) बनाउने जादु
+            def get_short_name(name):
+                n = str(name).replace('Race', '').replace('Throw', '').replace('Jump', '').strip()
+                if 'Kumite' in n: return n.replace('Kumite ', 'Kum')
+                if 'Kyorugi' in n: return n.replace('Kyorugi ', 'Kyo')
+                if 'Sanda' in n: return n.replace('Sanda ', 'San')
+                if 'Volleyball' in n: return 'VB'
+                if 'Kabaddi' in n: return 'KBD'
+                if 'High' in n: return 'HJ'
+                if 'Long' in n: return 'LJ'
+                if 'Triple' in n: return 'TJ'
+                if 'Shot Put' in n: return 'SP'
+                if 'Javelin' in n: return 'JT'
+                if 'Solo Kata' in n: return 'Kata'
+                if 'Solo Poomsae' in n: return 'Poomsae'
+                return n
+
+            matrix_data = []
+            event_cols = df_events['code'].tolist()
+            event_display = {}
+            event_hover = {}
+            
+            # 💡 ३. हेडरमा देखाउने (Display) र होभरमा देखाउने (Hover) डाटा तयार गर्ने
+            for _, row in df_events.iterrows():
+                short_name = get_short_name(row['name'])
+                icon = get_cat_icon(row['category'], row['sub_category'])
+                
+                # देखिने हेडर (जस्तै: 🏃 100m)
+                event_display[row['code']] = f"{icon} {short_name}"
+                
+                # माउस लग्दा देखिने विवरण (जस्तै: Athletics, Track, Sprint, 100m Race)
+                event_hover[row['code']] = f"({row['category']}, {row['sub_category']}, {row['event_group']}, {row['name']})"
+
+            # 💡 ४. खेलाडीहरूको म्याट्रिक्स तयार गर्ने
+            for _, p in df_players.iterrows():
+                p_id = p['id']
+                clean_iemis = str(p['iemis_id']).replace('.0', '').replace('nan', '') if pd.notna(p['iemis_id']) else ''
+                player_info = f"{p['name']} ({clean_iemis})" if clean_iemis else p['name']
+                
+                row_dict = {'ID': p_id, 'खेलाडी (IEMIS)': player_info}
+                
+                p_regs = df_regs[df_regs['player_id'] == p_id]['event_code'].tolist()
+                for e_code in event_cols:
+                    row_dict[e_code] = True if e_code in p_regs else False
+                    
+                matrix_data.append(row_dict)
+                
+            df_matrix = pd.DataFrame(matrix_data)
+            df_matrix.set_index('खेलाडी (IEMIS)', inplace=True)
+            
+            config = { 'ID': None } 
+
+            # 💡 ५. होभर टुलटिप सहित चेकबक्स सेट गर्ने (अटो-फिट)
+            for e_code in event_cols:
+                config[e_code] = st.column_config.CheckboxColumn(
+                    label=event_display[e_code], 
+                    help=event_hover[e_code],  
+                    default=False
+                    # 💡 यहाँबाट width="small" हटाइएको छ ताकि हेडर पूरै देखियोस्!
+                )
+                                
+            edited_df = st.data_editor(
+                df_matrix, 
+                column_config=config, 
+                use_container_width=False, 
+                height=500
+            )
+            
+            st.markdown("---")
+            if st.button("💾 सबै परिवर्तनहरू सुरक्षित गर्नुहोस् (Save Bulk Edits)", type="primary", use_container_width=True):
+                with st.spinner("डाटाबेस अपडेट हुँदैछ... कृपया पर्खनुहोस्"):
+                    edited_df_reset = edited_df.reset_index()
+                    for _, row in edited_df_reset.iterrows():
+                        p_id = int(row['ID'])
+                        selected_evts = [e_code for e_code in event_cols if row[e_code] == True]
+                        db.update_player_registrations(p_id, selected_evts)
+                        
+                    st.success("✅ बल्क इडिट सफलतापूर्वक सेभ भयो!")
+                    st.rerun()
+
+            # ==========================================
+            # 📊 SUMMARY SECTION (तथ्याङ्क र सारांश)
+            # ==========================================
+            st.divider()
+            st.subheader(f"📈 {bulk_gender} तर्फको सारांश (Summary)")
+            
+            total_players = len(df_players)
+            st.markdown(f"**👥 कूल खेलाडी संख्या:** <span style='color:green; font-size:24px; font-weight:bold;'>{total_players}</span> जना", unsafe_allow_html=True)
+            
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.markdown("**✅ इभेन्ट अनुसार सहभागिता:**")
+                event_sums = df_matrix[event_cols].sum()
+                
+                sum_data = []
+                for e_code in event_cols:
+                    count = event_sums[e_code]
+                    if count > 0:
+                        ev_name = df_events[df_events['code']==e_code]['name'].iloc[0]
+                        sum_data.append({"इभेन्ट (Event)": ev_name, "सहभागी संख्या": count})
+                
+                if sum_data:
+                    st.dataframe(pd.DataFrame(sum_data), hide_index=True, use_container_width=True)
+                else:
+                    st.info("कुनै पनि इभेन्टमा खेलाडी दर्ता भएका छैनन्।")
+            
+            with c2:
+                st.markdown("**⚠️ सहभागिता नभएका (खाली) इभेन्टहरू:**")
+                zero_events = [e_code for e_code in event_cols if event_sums[e_code] == 0]
+                
+                if zero_events:
+                    zero_data = [{"खाली इभेन्टहरू": df_events[df_events['code']==e_code]['name'].iloc[0]} for e_code in zero_events]
+                    st.dataframe(pd.DataFrame(zero_data), hide_index=True, use_container_width=True)
+                else:
+                    st.success("🎉 उत्कृष्ट! सबै इभेन्टहरूमा खेलाडी दर्ता भएका छन्।")
+                    
+        conn.close()
+
+# ==========================================
+# TAB 5: VIEW ALL PLAYERS
 # ==========================================
 with tab_view:
     st.header(f"📋 {sel_mun_name} का दर्ता भएका खेलाडीहरू")
@@ -423,7 +595,7 @@ with tab_view:
         st.write(f"कुल खेलाडी संख्या: **{len(df_players)}**")
 
 # ==========================================
-# TAB 5: ID CARD 
+# TAB 6: ID CARD 
 # ==========================================
 with tab_idcard:
     st.header("🪪 परिचयपत्र जेनेरेटर (ID Card)")

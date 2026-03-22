@@ -1,10 +1,8 @@
+# pages\0_Dashboard.py
 import streamlit as st
 import pandas as pd
 import altair as alt
 import database as db
-st.write(f"Current Mode: {db.APP_MODE}")
-st.write(f"DB URL in use: {db.LOCAL_DB_URL}")
-
 import utils.live_state as ls
 from config import CONFIG, render_header, render_footer
 
@@ -56,7 +54,8 @@ with c_wel:
     role_color = "#1E88E5" if st.session_state.user_role == 'admin' else "#2E7D32"
     role_text = "प्रणाली प्रशासक (Admin)" if st.session_state.user_role == 'admin' else "पालिका प्रयोगकर्ता"
     st.markdown(f"<h3 style='margin:0;'>👋 स्वागत छ, <span style='color:{role_color};'>{st.session_state.username.upper()}</span> ({role_text})</h3>", unsafe_allow_html=True)
-    
+    st.write(f"Current Mode: {db.APP_MODE}")
+
 with c_btn:
     if st.button("🚪 सुरक्षित लगआउट", use_container_width=True):
         # १. सेसन क्लिन गर्ने
@@ -93,9 +92,11 @@ def fetch_dashboard_data(role, muni_id):
                 SUM(CASE WHEN r.medal='Gold' THEN 1 ELSE 0 END) as "स्वर्ण",
                 SUM(CASE WHEN r.medal='Silver' THEN 1 ELSE 0 END) as "रजत",
                 SUM(CASE WHEN r.medal='Bronze' THEN 1 ELSE 0 END) as "कास्य",
-                COUNT(r.medal) as "कुल"
+                COUNT(*) as "कुल"
                 FROM results r JOIN municipalities m ON r.municipality_id = m.id 
-                GROUP BY m.name ORDER BY "स्वर्ण" DESC, "रजत" DESC LIMIT 5
+                WHERE r.medal IN ('Gold', 'Silver', 'Bronze')
+                GROUP BY m.name 
+                ORDER BY "स्वर्ण" DESC, "रजत" DESC, "कास्य" DESC LIMIT 5
             """, conn)
         else:
             data['gender'] = pd.read_sql_query("SELECT gender, COUNT(*) as c FROM players WHERE municipality_id = %s GROUP BY gender", conn, params=(muni_id,))
@@ -106,7 +107,10 @@ def fetch_dashboard_data(role, muni_id):
             data['tally'] = pd.read_sql_query("""
                 SELECT e.name as "विधा", r.medal as "पदक" 
                 FROM results r JOIN events e ON r.event_code = e.code
-                WHERE r.municipality_id = %s ORDER BY r.id DESC LIMIT 5
+                WHERE r.municipality_id = %s AND r.medal IN ('Gold', 'Silver', 'Bronze')
+                ORDER BY r.id DESC LIMIT 5
+                
+                                              
             """, conn, params=(muni_id,))
             
     except Exception as e:
@@ -121,8 +125,10 @@ dash_data = fetch_dashboard_data(role, muni_id)
 
 df_gender = dash_data['gender']
 g_dict = dict(zip(df_gender['gender'], df_gender['c'])) if not df_gender.empty else {}
-m_count = g_dict.get('Male', 0)
-f_count = g_dict.get('Female', 0)
+# 💡 'Male' वा 'Boys' जे भए पनि गन्ने
+m_count = g_dict.get('Male', 0) + g_dict.get('Boys', 0) + g_dict.get('Boy', 0)
+# 💡 'Female' वा 'Girls' जे भए पनि गन्ने
+f_count = g_dict.get('Female', 0) + g_dict.get('Girls', 0) + g_dict.get('Girl', 0)
 total_players = m_count + f_count
 
 # लाइभ म्याच (क्यास नगर्ने, live_state बाट सिधै तान्ने)
@@ -208,7 +214,7 @@ with c_log:
     df_rec = dash_data['recent']
     if not df_rec.empty:
         for _, row in df_rec.iterrows():
-            icon = "👦" if row['gender'] == 'Male' else "👧"
+            icon = "👦" if row['gender'] == 'Boy' else "👧"
             st.markdown(f"""
             <div class="log-row">
                 <div style="font-size:20px;">{icon}</div>

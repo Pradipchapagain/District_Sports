@@ -12,15 +12,49 @@ from datetime import datetime
 st.set_page_config(page_title="Volleyball Live TV", layout="wide", initial_sidebar_state="collapsed")
 st_autorefresh(interval=1000, key="vb_sb_refresh")
 
-# 🎨 २. परिमार्जित CSS (Positioning & Layout Fixes)
+# 🎨 २. अल्ट्रा-क्लिन मास्टर CSS (सबै मर्ज गरिएको)
 st.markdown("""
     <style>
-        #MainMenu, header, footer {visibility: hidden;}
-        .block-container {padding: 0rem 2rem 0rem 2rem !important; background-color: #0f172a;}
+        /* =========================================
+           १. स्ट्रिमलिटका सबै डिस्टर्ब गर्ने कुराहरू हटाउने 
+           ========================================= */
+        [data-testid="stSidebar"], [data-testid="stSidebarNav"], .st-emotion-cache-16idsys {
+            display: none !important;
+            width: 0px !important;
+        }
+        header, [data-testid="stHeader"] {
+            display: none !important;
+        }
+        #MainMenu, footer {
+            visibility: hidden !important;
+            display: none !important;
+        }
         
-        /* 💡 सुझाव १: Header Box with Relative Positioning */
+        /* =========================================
+           २. पेजलाई फुल-स्क्रिन बनाउने (Padding & Margin Zero) 
+           ========================================= */
+        .block-container {
+            padding-top: 0rem !important;
+            padding-bottom: 0rem !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
+            max-width: 100% !important;
+            margin-top: 0px !important;
+            background-color: #0f172a;
+        }
+        html, body, [data-testid="stAppViewContainer"], .main {
+            background-color: #0E1117;
+            overflow: hidden; /* स्क्रोलबार हटाउने */
+            height: 100vh;
+            margin: 0px !important;
+            padding: 0px !important;
+        }
+
+        /* =========================================
+           ३. भलिबलको आफ्नै कस्टम डिजाइन (Positioning Fixes) 
+           ========================================= */
         .header-container { position: relative; width: 100%; margin-bottom: 20px; }
-        .header-box { text-align: center; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b); padding: 15px; border-bottom: 4px solid #ef4444; border-radius: 0 0 20px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .header-box { text-align: center; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b); padding: 15px; border-bottom: 4px solid #ef4444; border-radius: 0 0 20px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin: 0px 0px 15px 0px !important; }
         .match-info-badge { position: absolute; top: 15px; right: 20px; background: rgba(30, 41, 59, 0.9); padding: 8px 15px; border-radius: 10px; color: #fbbf24; font-weight: bold; border: 1px solid #475569; font-family: monospace; font-size: 14px; text-align: right; }
 
         /* 🏐 Court & Players */

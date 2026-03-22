@@ -106,10 +106,28 @@ def update_live_tv(event_name, state):
                  (event_name, p1, p2, score_a, score_b, sets_a, sets_b, to_a, to_b, serving_team, json.dumps(state)))
     conn.commit(); c.close(); conn.close()
 
-    prev_scores = [f"S{s}({state['scores'][s][p1]}-{state['scores'][s][p2]})" for s in range(1, c_set)]
-    history_str = f" | History: {' | '.join(prev_scores)}" if prev_scores else ""
-    ls.update_live_match(event_name, p1, p2, str(score_a), str(score_b), status=f"Set {c_set} | Sets Won: {sets_a} - {sets_b}{history_str}", is_kumite=False)
+    # 💡 अघिल्ला (सकिएका) सेटहरूको स्कोर लिस्ट तयार गर्ने
+    completed_sets = []
+    for s in range(1, c_set):
+        set_score = f"{state['scores'][s][p1]}-{state['scores'][s][p2]}"
+        completed_sets.append(set_score)
 
+    # 💡 live_state मा अपडेट पठाउँदा past_sets पनि पठाउने
+    ls.update_live_match(
+        event_name=event_name, 
+        p_a=p1, 
+        p_b=p2, 
+        score_a=str(score_a), 
+        score_b=str(score_b), 
+        status=f"Set {c_set} | Sets Won: {sets_a} - {sets_b}", # पुरानो History स्ट्रिङ यहाँबाट हटाइएको छ
+        is_kumite=False,
+        current_set=c_set,           # कुन सेट चलिरहेको छ 
+        set_a=sets_a,                # टिम A ले जितेको सेट संख्या
+        set_b=sets_b,                # टिम B ले जितेको सेट संख्या
+        past_sets=completed_sets     # सकिएका सेटहरूको स्कोर (जस्तै: ['25-13', '18-25'])
+    )
+
+    
 # ==========================================
 # 🏐 २. अपरेटर कोर्ट UI (Horizontal)
 # ==========================================

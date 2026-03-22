@@ -286,70 +286,140 @@ def update_player_registrations(player_id, municipality_id, event_codes):
 # ==========================================
 def import_school_data(excel_file, municipality_id):
     """एक्सेल फाइलबाट धेरै खेलाडीहरूको डाटा एकैपटक इम्पोर्ट गर्छ।"""
+    import psycopg2.extras
+    import pandas as pd
+    
     conn = get_connection()
     c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        # खेलहरूको सूची र टाइप तान्ने
-        c.execute("SELECT code, name, type FROM events")
+        # 💡 १. छात्र र छात्राको छुट्टाछुट्टै म्याप बनाउने (ओभरराइट नहोस् भनेर)
+        c.execute("SELECT code, name, type, gender FROM events")
         events_rows = c.fetchall()
-        event_type_map = {row['code']: row['type'] for row in events_rows}
-        event_name_map = {row['name']: row['code'] for row in events_rows}
         
-        players_cnt, reg_cnt = 0, 0
+        boys_event_map = {}
+        girls_event_map = {}
+        boys_total = 0
+        girls_total = 0
+        
+        for r in events_rows:
+            e_name = str(r['name']).strip()
+            if r['gender'] in ['Boys', 'Both']:
+                boys_event_map[e_name] = r['code']
+                boys_total += 1
+            if r['gender'] in ['Girls', 'Both']:
+                girls_event_map[e_name] = r['code']
+                girls_total += 1
+                
+        # 💡 २. तथ्याङ्क राख्ने डिक्सनरी
+        stats = {
+            'officials': 0, # (हाल एक्सेलमा अफिसियल छैन, त्यसैले ०)
+            'boys_cnt': 0, 
+            'girls_cnt': 0,
+            'boys_reg_events': set(), 
+            'girls_reg_events': set()
+        }
+
+        xls = pd.ExcelFile(excel_file)
 
         for sheet, gender in [('Boys_Entry', 'Boys'), ('Girls_Entry', 'Girls')]:
+            if sheet not in xls.sheet_names:
+                continue
+                
             try:
-                # एक्सेल पढ्ने (skiprows=3 तपाईंको फाइलको फर्म्याट अनुसार)
-                df = pd.read_excel(excel_file, sheet_name=sheet, skiprows=3)
+                # एक्सेल पढ्ने (skiprows=3)
+                df = pd.read_excel(xls, sheet_name=sheet, skiprows=3)
                 df = df.dropna(subset=['Student Name'])
+                
+                # लिङ्ग अनुसार सही म्याप छान्ने
+                current_map = boys_event_map if gender == 'Boys' else girls_event_map
                 
                 for _, row in df.iterrows():
                     p_name = str(row.get('Student Name', '')).strip()
                     if not p_name or p_name == 'nan': continue
                     
-                    # १. खेलाडी थप्ने
-                    c.execute("""
-                        INSERT INTO players (municipality_id, iemis_id, name, gender, dob_bs, school_name, class_val)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-                    """, (municipality_id, str(row.get('EMIS ID', '')), p_name, gender, 
-                          str(row.get('DOB (YYYY-MM-DD)', '2064-01-01')), 
-                          str(row.get('School Name', 'Unknown')), str(row.get('Class', ''))))
-                    pid = c.fetchone()['id']
-                    players_cnt += 1
+                    iemis = str(row.get('EMIS ID', '')).replace('.0', '').strip()
+                    dob = str(row.get('DOB (YYYY-MM-DD)', '2064-01-01')).strip()
+                    school = str(row.get('School Name', 'Unknown')).strip()
+                    p_class = str(row.get('Class', '')).replace('.0', '').strip()
 
-                    # २. खेलहरूमा दर्ता गर्ने (कलम ५ बाट सुरु हुने खेलका नामहरू)
+                    # 💡 जादु यहाँ छ: पालिका, नाम, लिङ्ग र IEMIS ID चारवटै कुरा मिलेको छ कि छैन चेक गर्ने
+                    c.execute("""
+                        SELECT id FROM players 
+                        WHERE municipality_id=%s AND name=%s AND gender=%s AND iemis_id=%s
+                    """, (municipality_id, p_name, gender, iemis))
+                    existing_player = c.fetchone()
+
+                    if existing_player:
+                        # पुरानो खेलाडी ठ्याक्कै भेटियो -> बाँकी विवरण अपडेट (Overwrite) गर्ने
+                        pid = existing_player['id']
+                        c.execute("""
+                            UPDATE players 
+                            SET dob_bs=%s, school_name=%s, class_val=%s
+                            WHERE id=%s
+                        """, (dob, school, p_class, pid))
+                        
+                        # एक्सेलको नयाँ इभेन्ट राख्नको लागि पुराना दर्ताहरू क्लिन गर्ने
+                        c.execute("DELETE FROM registrations WHERE player_id=%s", (pid,))
+                    else:
+                        # नाम वा IEMIS ID मध्ये कुनै एउटा फरक छ भने नयाँ खेलाडी हो -> इन्सर्ट (Add) गर्ने
+                        c.execute("""
+                            INSERT INTO players (municipality_id, iemis_id, name, gender, dob_bs, school_name, class_val)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+                        """, (municipality_id, iemis, p_name, gender, dob, school, p_class))
+                        pid = c.fetchone()['id']
+                        
+                        if gender == 'Boys': stats['boys_cnt'] += 1
+                        else: stats['girls_cnt'] += 1
+
+                    # खेलहरूमा दर्ता गर्ने (कलम ५ बाट सुरु)
                     for col in df.columns[5:]:
-                        # यदि कलममा '1' छ भने त्यो खेलमा दर्ता गर्ने
-                        if pd.notna(row.get(col)) and str(row.get(col)).strip() in ['1', '1.0']:
-                            # नाम मिलेको खेलको कोड पत्ता लगाउने
-                            e_code = event_name_map.get(col)
+                        val = str(row.get(col)).strip()
+                        if pd.notna(row.get(col)) and val in ['1', '1.0', 'True']:
+                            e_code = current_map.get(str(col).strip())
+                            
                             if e_code:
-                                # खेलको लिङ्ग (Gender) मिलेको हुनुपर्छ
-                                if (gender == 'Boys' and e_code.startswith('B')) or (gender == 'Girls' and e_code.startswith('G')):
-                                    c.execute("""
-                                        INSERT INTO registrations (player_id, event_code, municipality_id) 
-                                        VALUES (%s, %s, %s)
-                                        ON CONFLICT DO NOTHING
-                                    """, (pid, e_code, municipality_id))
-                                    reg_cnt += 1
+                                c.execute("""
+                                    INSERT INTO registrations (player_id, event_code, municipality_id) 
+                                    VALUES (%s, %s, %s)
+                                    ON CONFLICT DO NOTHING
+                                """, (pid, e_code, municipality_id))
+                                
+                                if gender == 'Boys': stats['boys_reg_events'].add(e_code)
+                                else: stats['girls_reg_events'].add(e_code)
+                                
             except Exception as e:
-                print(f"Sheet Error: {e}")
+                print(f"Sheet Error ({sheet}): {e}")
                 continue
                 
         conn.commit()
-        return True, f"Successfully imported {players_cnt} players and {reg_cnt} registrations."
+        
+        # 💡 ३. हजुरले भनेजस्तै विस्तृत रिपोर्ट (Success Message) तयार गर्ने
+        report_msg = f"""
+**विस्तृत रिपोर्ट (Import Summary):**
+* **{stats['officials']}** जना अफिसियल्सको रेकर्ड इम्पोर्ट भएको छ ।
+* **{stats['boys_cnt']}** जना छात्र खेलाडीको रेकर्ड इम्पोर्ट भएको छ ।
+* **{stats['girls_cnt']}** जना छात्रा खेलाडीको रेकर्ड इम्पोर्ट भएको छ ।
+
+---
+* **{boys_total}** छात्र इभेन्ट मध्ये **{len(stats['boys_reg_events'])}** मा सहभागीता दर्ता भएको छ ।
+* **{girls_total}** छात्रा इभेन्ट मध्ये **{len(stats['girls_reg_events'])}** मा सहभागीता दर्ता भएको छ ।
+        """
+        return True, report_msg
+        
     except Exception as e:
-        conn.rollback(); return False, str(e)
+        conn.rollback()
+        return False, str(e)
     finally:
-        c.close(); conn.close()
+        c.close()
+        conn.close()
 
 # ==========================================
 # ⚠️ ७. RULE VALIDATIONS (Rule Engine)
 # ==========================================
+
 def check_athletics_violations():
     """एथलेटिक्समा ३ भन्दा बढी व्यक्तिगत खेल खेल्ने खेलाडीहरू खोज्छ।"""
     conn = get_connection()
-    # SQL मा '%%Relay%%' को सट्टा '%Relay%' (PostgreSQL syntax)
     q = """
         SELECT p.name as "Player", m.name as "Municipality", STRING_AGG(e.name, ', ') as "Event_List"
         FROM registrations r 
@@ -364,8 +434,104 @@ def check_athletics_violations():
     conn.close()
     return df
 
+def check_martial_arts_violations():
+    """मार्सल आर्ट्सको कुमिते/ग्योरोगी (Combat) मा १ भन्दा बढी तौल समूहमा लड्ने खेलाडी खोज्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT p.name as "Player", m.name as "Municipality", STRING_AGG(e.name, ', ') as "Event_List"
+        FROM registrations r 
+        JOIN players p ON r.player_id = p.id 
+        JOIN events e ON r.event_code = e.code
+        JOIN municipalities m ON p.municipality_id = m.id
+        WHERE e.category = 'Martial Arts' AND e.match_type = 'Combat'
+        GROUP BY p.id, p.name, m.name 
+        HAVING COUNT(r.event_code) > 1
+    """
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+    return df
+
+def check_team_size_violations():
+    """टिम गेममा तोकिएको भन्दा कम वा बढी खेलाडी दर्ता भएको पालिका खोज्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT m.name as "Municipality", e.name as "Event", COUNT(r.player_id) as "Player_Count"
+        FROM registrations r
+        JOIN events e ON r.event_code = e.code
+        JOIN municipalities m ON r.municipality_id = m.id
+        WHERE e.type = 'Team'
+        GROUP BY m.name, e.name, e.code
+        HAVING (e.name LIKE '%Volleyball%' AND (COUNT(r.player_id) < 6 OR COUNT(r.player_id) > 12))
+           OR (e.name LIKE '%Kabaddi%' AND (COUNT(r.player_id) < 7 OR COUNT(r.player_id) > 12))
+           OR (e.name LIKE '%Relay%' AND (COUNT(r.player_id) < 4 OR COUNT(r.player_id) > 6))
+    """
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+    return df
+
+def check_athletics_single_limit_violations():
+    """एथलेटिक्सको एउटै इभेन्टमा एउटा पालिकाबाट २ जना भन्दा बढी दर्ता भएको खोज्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT m.name as "Municipality", e.name as "Event", COUNT(r.player_id) as "Registered_Count"
+        FROM registrations r
+        JOIN events e ON r.event_code = e.code
+        JOIN municipalities m ON r.municipality_id = m.id
+        WHERE e.category = 'Athletics' AND e.type = 'Individual'
+        GROUP BY m.name, e.name
+        HAVING COUNT(r.player_id) > 2
+    """
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+    return df
+
+def check_martial_arts_forms_violations():
+    """काता/पुम्से/थाउलो जस्ता प्रदर्शन खेलमा १ पालिकाबाट १ भन्दा बढी दर्ता खोज्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT m.name as "Municipality", e.name as "Event", COUNT(r.player_id) as "Registered_Count"
+        FROM registrations r
+        JOIN events e ON r.event_code = e.code
+        JOIN municipalities m ON r.municipality_id = m.id
+        WHERE e.category = 'Martial Arts' AND e.match_type = 'Demonstration'
+        GROUP BY m.name, e.name
+        HAVING COUNT(r.player_id) > 1
+    """
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+    return df
+
+def check_age_limit_violations(limit_date):
+    """तोकिएको मितिभन्दा अगाडि जन्मिएका (Over Age) खेलाडी खोज्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT p.name as "Player", m.name as "Municipality", p.dob_bs as "DOB"
+        FROM players p
+        JOIN municipalities m ON p.municipality_id = m.id
+        WHERE p.dob_bs < %s
+    """
+    df = pd.read_sql_query(q, conn, params=(limit_date,))
+    conn.close()
+    return df
+
+def check_gender_mismatch():
+    """छात्रको खेलमा छात्रा वा छात्राको खेलमा छात्र दर्ता भएको खोज्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT p.name as "Player", m.name as "Municipality", p.gender as "Player_Gender", e.gender as "Event_Gender", e.name as "Event"
+        FROM registrations r
+        JOIN players p ON r.player_id = p.id
+        JOIN events e ON r.event_code = e.code
+        JOIN municipalities m ON r.municipality_id = m.id
+        WHERE (p.gender IN ('Boys', 'Male', 'Boy') AND e.gender IN ('Girls', 'Female'))
+           OR (p.gender IN ('Girls', 'Female', 'Girl') AND e.gender IN ('Boys', 'Male'))
+    """
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+    return df
+
 def check_duplicate_emis():
-    """एउटै EMIS ID प्रयोग गरी फरक-फरक नाम वा पालिकाबाट दर्ता भएका शंकास्पद खेलाडी खोज्छ।"""
+    """एउटै EMIS ID प्रयोग गरी फरक-फरक नामबाट दर्ता भएका खेलाडी खोज्छ।"""
     conn = get_connection()
     q = """
         SELECT p.iemis_id as "EMIS_ID", 
@@ -381,12 +547,30 @@ def check_duplicate_emis():
     conn.close()
     return df
 
+def check_multiple_team_games():
+    """एकै खेलाडीले भलिबल र कबड्डी दुवै खेलेको छ कि छैन जाँच्छ।"""
+    conn = get_connection()
+    q = """
+        SELECT p.name as "Player", m.name as "Municipality", STRING_AGG(e.name, ', ') as "Team_Games"
+        FROM registrations r
+        JOIN players p ON r.player_id = p.id
+        JOIN events e ON r.event_code = e.code
+        JOIN municipalities m ON r.municipality_id = m.id
+        WHERE e.event_group IN ('Volleyball', 'Kabaddi')
+        GROUP BY p.id, p.name, m.name
+        HAVING COUNT(DISTINCT e.event_group) > 1
+    """
+    df = pd.read_sql_query(q, conn)
+    conn.close()
+    return df
+
 def check_palika_player_quota(max_limit=88):
     """कोटा (Max 88) भन्दा बढी खेलाडी दर्ता गर्ने पालिकाहरूको सूची दिन्छ।"""
     conn = get_connection()
     q = "SELECT m.name as \"Municipality\", COUNT(p.id) as \"Total_Players\" FROM players p JOIN municipalities m ON p.municipality_id = m.id GROUP BY m.id, m.name HAVING COUNT(p.id) > %s"
-    df = pd.read_sql_query(q, conn, params=(max_limit,)); conn.close(); return df
-
+    df = pd.read_sql_query(q, conn, params=(max_limit,))
+    conn.close()
+    return df
 # ==========================================
 # 🏅 ८. OFFICIALS & MATCH RESULTS
 # ==========================================

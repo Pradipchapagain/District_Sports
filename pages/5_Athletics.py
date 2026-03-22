@@ -106,19 +106,28 @@ with st.sidebar:
     group_filtered = sub_filtered[sub_filtered['event_group'] == sel_evt_group]
     
     evt_opts = {r['name']: r for _, r in group_filtered.iterrows()}
-    sel_evt_name = st.selectbox("४. इभेन्ट (Event):", list(evt_opts.keys()))
     
-    current_event = evt_opts[sel_evt_name]
-    
-    if sel_sub_cat == "Track":
-        script_mode = "Relay" if current_event['event_group'] == "Relay" else "Track"
-    elif sel_sub_cat == "Field":
-        script_mode = "HighJump" if "High Jump" in current_event['name'] else "Field"
+    # 💡 यदि इभेन्ट छ भने मात्र सेलेक्टबक्स देखाउने
+    if evt_opts:
+        sel_evt_name = st.selectbox("४. इभेन्ट (Event):", list(evt_opts.keys()))
+        current_event = evt_opts.get(sel_evt_name)
+    else:
+        st.warning("⚠️ यो समूहमा कुनै खेल भेटिएन।")
+        current_event = None
+
+    # 💡 जादु यहाँ छ: `if current_event:` को सट्टा `is not None` लेख्ने
+    if current_event is not None:
+        if sel_sub_cat == "Track":
+            script_mode = "Relay" if current_event['event_group'] == "Relay" else "Track"
+        elif sel_sub_cat == "Field":
+            script_mode = "HighJump" if "High Jump" in current_event['name'] else "Field"
+    else:
+        script_mode = None
 
 # ==========================================
 # MAIN PANEL
 # ==========================================
-if current_event is not None:
+if current_event is not None and script_mode is not None:
     evt_code = current_event['code']
     evt_name = current_event['name']
     evt_gender = current_event['gender']
@@ -267,11 +276,11 @@ if current_event is not None:
                             c = conn.cursor()
                             c.execute("DELETE FROM results WHERE event_code=%s AND medal='Qualified'", (evt_code,))
                             for q in qual_list:
-                                # 💡 PostgreSQL Logic: Municipality is Primary
+                                import json
                                 c.execute("""
-                                    INSERT INTO results (event_code, municipality_id, player_id, position, score, medal) 
+                                    INSERT INTO results (event_code, municipality_id, player_id, position, score_details, medal) 
                                     VALUES (%s, %s, %s, 0, %s, 'Qualified')
-                                """, (evt_code, q['mun_id'], q['player_id'], q['time']))
+                                """, (evt_code, q['mun_id'], q['player_id'], json.dumps({"time": q['time']})))
                             conn.commit()
                             c.close()
                             conn.close()
@@ -327,10 +336,11 @@ if current_event is not None:
                                 c = conn.cursor()
                                 for x in res_data: 
                                     # 💡 PostgreSQL Logic: Municipality wins the medal
+                                    import json
                                     c.execute("""
-                                        INSERT INTO results (event_code, municipality_id, player_id, position, score, medal)
+                                        INSERT INTO results (event_code, municipality_id, player_id, position, score_details, medal)
                                         VALUES (%s, %s, %s, %s, %s, %s)
-                                    """, (evt_code, x['mun_id'], x['player_id'], x['position'], x['time'], x['medal']))
+                                    """, (evt_code, x['mun_id'], x['player_id'], x['position'], json.dumps({"time": x['time']}), x['medal']))
                                 conn.commit()
                                 c.close()
                                 conn.close()
@@ -349,22 +359,39 @@ if current_event is not None:
     # MODE: RELAY (Team Event - By Municipality)
     # ========================================================
     elif script_mode == "Relay":
-        st.info("ℹ️ यो रिले इभेन्ट हो। यसमा सम्बन्धित पालिकाबाट छानिएका ४ जना खेलाडीको एउटा टिम बन्छ।")
+        st.info("ℹ️ यो रिले इभेन्ट हो। यसमा सम्बन्धित पालिकाबाट छानिएका खेलाडीहरूको एउटा टिम बन्छ।")
         
         try:
-            # 💡 PostgreSQL string aggregation logic adjustment (just in case pandas changes it)
-            relay_grouped = p_df.groupby(['municipality', 'mun_id']).agg({'name': lambda x: ', '.join(x), 'id': 'first', 'iemis_id': 'first'}).reset_index()
-            relay_df = pd.DataFrame({'id': relay_grouped['id'], 'mun_id': relay_grouped['mun_id'], 'name': relay_grouped['municipality'], 'players_list': relay_grouped['name'], 'municipality': relay_grouped['municipality']})
+            # 💡 गल्ती यहाँ थियो: participants_df को सट्टा p_df हुनुपर्छ!
+            relay_grouped = p_df.groupby(['municipality', 'mun_id']).agg({
+                'name': lambda x: ', '.join(x), 
+                'id': 'first'
+            }).reset_index()
+            
+            relay_df = pd.DataFrame({
+                'id': relay_grouped['id'], 
+                'mun_id': relay_grouped['mun_id'], 
+                'name': relay_grouped['municipality'], 
+                'players_list': relay_grouped['name'], 
+                'municipality': relay_grouped['municipality']
+            })
         except Exception as e:
-            st.error(f"Grouping Error: {e}"); st.stop()
+            st.error(f"Grouping Error: {e}")
+            st.stop()
             
         default_idx = 1 if len(relay_df) <= 8 else 0
         comp_mode = st.radio("प्रतियोगिता मोड छान्नुहोस्:", ["🔥 हिट्स र फाइनल", "🏁 सिधै फाइनल"], index=default_idx, horizontal=True)
         is_direct_final = (comp_mode == "🏁 सिधै फाइनल")
         
-        if is_direct_final: t1, t3 = st.tabs(["📋 स्टार्ट लिस्ट", "🏆 नतिजा"]); t2 = None
-        else: t1, t2, t3 = st.tabs(["🔥 हिट्स", "✅ छनौट", "🏁 फाइनल"])
+        if is_direct_final: 
+            t1, t3 = st.tabs(["📋 स्टार्ट लिस्ट", "🏆 नतिजा"])
+            t2 = None
+        else: 
+            t1, t2, t3 = st.tabs(["🔥 हिट्स", "✅ छनौट", "🏁 फाइनल"])
             
+        # --------------------------------------------------------
+        # १. स्टार्ट लिस्ट र PDF जेनेरेसन
+        # --------------------------------------------------------
         with t1:
             st.markdown("### 🎲 रिले स्टार्ट लिस्ट तयारी")
             team_list = relay_df['name'].unique().tolist()
@@ -376,38 +403,60 @@ if current_event is not None:
             st.write("")
             if c_btn.button("🎲 तयार गर्नुहोस्", type="primary", use_container_width=True):
                 h_df, cnt = generate_heats(relay_df, len(relay_df) if is_direct_final else lanes, seeded_teams)
-                if is_direct_final: h_df['heat'] = 'FINAL'
+                if is_direct_final: 
+                    h_df['heat'] = 'FINAL'
+                    
+                if 'heats_data' not in st.session_state:
+                    st.session_state.heats_data = {}
+                    
                 st.session_state.heats_data[evt_code] = h_df
-                ls.save_fixture(evt_code, 'heats', h_df.to_dict('records'))
+                
+                try:
+                    ls.save_fixture(evt_code, 'heats', h_df.to_dict('records'))
+                except Exception as e:
+                    pass
+                    
                 st.success("✅ रिले स्टार्ट लिस्ट तयार भयो!")
                 
-            if evt_code in st.session_state.heats_data:
+            if 'heats_data' in st.session_state and evt_code in st.session_state.heats_data:
                 st.divider()
                 h_df = st.session_state.heats_data[evt_code]
+                
                 pdf_df = h_df.copy()
                 pdf_df['players_list'] = pdf_df['id'].apply(lambda pid: relay_df[relay_df['id']==pid].iloc[0]['players_list'] if not relay_df[relay_df['id']==pid].empty else "")
                 
-                pdf_bytes = pdf_gen.generate_heat_sheet_pdf(current_event, pdf_df, CONFIG)    
-                st.download_button("📄 अफिसियल सिट डाउनलोड गर्नुहोस्", pdf_bytes, f"StartList_{evt_code}.pdf", "application/pdf")
+                col_dl, _ = st.columns([1, 2])
+                pdf_bytes = pdf_gen.generate_relay_heat_sheet_pdf(current_event, pdf_df, CONFIG)    
+                col_dl.download_button("📄 रिले ट्र्याक सिट (PDF) डाउनलोड गर्नुहोस्", pdf_bytes, f"Relay_StartList_{evt_code}.pdf", "application/pdf")
                 
                 for h in sorted(h_df['heat'].unique()):
                     with st.container(border=True):
                         st.markdown(f"<h4 style='color:#1f77b4;'>{'🏁 FINAL MATCH' if h=='FINAL' else f'🔥 HEAT {h}'}</h4>", unsafe_allow_html=True)
                         disp = h_df[h_df['heat']==h].sort_values(by='lane')[['lane', 'name', 'id']]
-                        disp['Runners'] = disp['id'].apply(lambda pid: relay_df[relay_df['id']==pid].iloc[0]['players_list'] if not relay_df[relay_df['id']==pid].empty else "")
+                        
+                        def get_runners(pid):
+                            res = relay_df[relay_df['id']==pid]
+                            return res.iloc[0]['players_list'] if not res.empty else ""
+                            
+                        disp['Runners'] = disp['id'].apply(get_runners)
                         st.dataframe(disp[['lane', 'name', 'Runners']].rename(columns={'name': 'पालिका (Municipality)'}), hide_index=True, use_container_width=True)
 
+        # --------------------------------------------------------
+        # २. हिट्स छनौट (यदि सिधै फाइनल होइन भने)
+        # --------------------------------------------------------
         if not is_direct_final and t2:
             with t2:
-                if evt_code in st.session_state.heats_data:
+                if 'heats_data' in st.session_state and evt_code in st.session_state.heats_data:
                     h_df = st.session_state.heats_data[evt_code]
                     st.markdown("### ⏱️ रिले हिट्स छनौट")
+                    
                     with st.form(f"sel_relay_{evt_code}"):
                         qual_list = []
                         for h in sorted(h_df['heat'].unique()):
                             st.markdown(f"**🔥 Heat {h}**")
                             hc1, hc2, hc3, hc4 = st.columns([4, 2, 2, 1])
                             hc1.caption("टिम (Team)"); hc2.caption("समय"); hc3.caption("स्थान"); hc4.caption("Q")
+                            
                             for _, r in h_df[h_df['heat']==h].iterrows():
                                 c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
                                 c1.write(f"🏛️ **{r['name']}**")
@@ -419,35 +468,72 @@ if current_event is not None:
                         
                         if st.form_submit_button("💾 छनौट सुरक्षित गर्नुहोस्", type="primary"):
                             conn = db.get_connection()
-                            c = conn.cursor()
-                            c.execute("DELETE FROM results WHERE event_code=%s AND medal='Qualified'", (evt_code,))
-                            for q in qual_list: 
-                                # 💡 PostgreSQL Logic: Team/Mun Qualification
-                                c.execute("INSERT INTO results (event_code, municipality_id, position, score, medal) VALUES (%s, %s, 0, %s, 'Qualified')", (evt_code, q['mun_id'], q['time']))
-                            conn.commit()
-                            c.close()
-                            conn.close()
-                            st.success("✅ पालिकाहरू फाइनलका लागि छानिए!")
+                            if conn:
+                                try:
+                                    c = conn.cursor()
+                                    c.execute("DELETE FROM results WHERE event_code=%s AND medal='Qualified'", (evt_code,))
+                                    for q in qual_list: 
+                                        import json
+                                        c.execute("INSERT INTO results (event_code, municipality_id, position, score_details, medal) VALUES (%s, %s, 0, %s, 'Qualified')", (evt_code, q['mun_id'], json.dumps({"time": q['time']})))                            
+                                    conn.commit()
+                                    st.success("✅ पालिकाहरू फाइनलका लागि छानिए!")
+                                except Exception as e:
+                                    st.error(f"DB Error: {e}")
+                                finally:
+                                    conn.close()
 
+        # --------------------------------------------------------
+        # ३. अन्तिम नतिजा र टिभी डिस्प्ले
+        # --------------------------------------------------------
         with t3:
             st.markdown("### 🏆 रिले अन्तिम नतिजा")
-            if not res.check_and_reset_results(evt_code):
+            
+            already_saved = False
+            try:
+                already_saved = res.check_and_reset_results(evt_code)
+            except:
+                pass
+                
+            if not already_saved:
                 target_df = st.session_state.heats_data.get(evt_code, pd.DataFrame()) if is_direct_final else pd.DataFrame()
                 
                 if not is_direct_final:
                     conn = db.get_connection()
-                    # 💡 PostgreSQL Logic for Relay Finalists
-                    q = """
-                        SELECT res.municipality_id as mun_id, m.name as name 
-                        FROM results res 
-                        JOIN municipalities m ON res.municipality_id = m.id 
-                        WHERE res.event_code = %s AND res.medal = 'Qualified'
-                    """
-                    target_df = pd.read_sql_query(q, conn, params=(evt_code,))
-                    conn.close()
+                    if conn:
+                        try:
+                            # हिट्सबाट छनौट भएका पालिकाहरू तान्ने
+                            q = """
+                                SELECT res.municipality_id as mun_id, m.name as name 
+                                FROM results res 
+                                JOIN municipalities m ON res.municipality_id = m.id 
+                                WHERE res.event_code = %s AND res.medal = 'Qualified'
+                            """
+                            target_df = pd.read_sql_query(q, conn, params=(evt_code,))
+                        except: pass
+                        finally: conn.close()
 
                 if not target_df.empty:
                     st.info("👇 **महत्त्वपूर्ण:** रिले दौडमा सम्बन्धित पालिकाका ४ जना खेलाडी अनिवार्य छान्नुहोस्।")
+                    
+                    # 💡 नयाँ थपिएको भाग: फाइनल ट्र्याक सिट (PDF) जेनेरेसन
+                    with st.expander("📄 फाइनल ट्र्याक सिट (PDF) डाउनलोड", expanded=True):
+                        final_pdf_df = target_df.copy()
+                        final_pdf_df['heat'] = "FINAL"
+                        final_pdf_df['lane'] = range(1, len(final_pdf_df) + 1) # १ देखि लेन असाइन गर्ने
+                        final_pdf_df['municipality'] = final_pdf_df['name'] 
+                        
+                        # सम्बन्धित पालिकाको खेलाडीहरू तान्ने फङ्सन
+                        def get_muni_players(m_name):
+                            m_players = p_df[p_df['municipality'] == m_name]['name'].tolist()
+                            return ", ".join(m_players)
+                            
+                        final_pdf_df['players_list'] = final_pdf_df['municipality'].apply(get_muni_players)
+                        
+                        col_fdl, _ = st.columns([1, 2])
+                        # त्यही चेकबक्स वाला रिले फङ्सन बोलाउने
+                        final_pdf_bytes = pdf_gen.generate_relay_heat_sheet_pdf(current_event, final_pdf_df, CONFIG)
+                        col_fdl.download_button("📥 फाइनल रिले सिट डाउनलोड", final_pdf_bytes, f"Relay_Final_{evt_code}.pdf", "application/pdf", type="secondary")
+                    
                     with st.form(f"final_relay_{evt_code}"):
                         res_data, val_errors = [], []
                         for _, r in target_df.iterrows():
@@ -457,6 +543,7 @@ if current_event is not None:
                             c1, c2, c3 = st.columns([4, 2, 2])
                             c1.caption("खेलाडी छान्नुहोस्"); c2.caption("समय"); c3.caption("स्थान (Medal)")
                             
+                            # 💡 यहाँ पनि p_df हुनुपर्छ
                             muni_players = p_df[p_df['municipality'] == muni_name]
                             p_opts = {f"{row['name']}": row['id'] for _, row in muni_players.iterrows()}
                             
@@ -469,10 +556,14 @@ if current_event is not None:
                                 rank = int(fr.split()[1][0]) if "1st" in fr or "2nd" in fr or "3rd" in fr else 4
                                 p_ids = [p_opts[n] for n in sel_names]
                                 
-                                if rank <= 3 and len(p_ids) != 4: val_errors.append(f"❌ {muni_name} को लागि ४ जना खेलाडी छानिएको छैन।")
-                                # 💡 Note: Relay saves municipality_id as winner, we can save players in a JSON column later or comma separated if needed.
-                                # For now, we save Municipality as winner, and we can iterate players.
-                                res_data.append({'p_ids': p_ids, 'mun_id': mun_id, 'position': rank, 'time': ft, 'medal': m, 'municipality': muni_name, 'name': 'Relay Team', 'runner_names': sel_names})
+                                if rank <= 3 and len(p_ids) != 4: 
+                                    val_errors.append(f"❌ {muni_name} को लागि ४ जना खेलाडी छानिएको छैन।")
+                                
+                                res_data.append({
+                                    'p_ids': p_ids, 'mun_id': mun_id, 'position': rank, 
+                                    'time': ft, 'medal': m, 'municipality': muni_name, 
+                                    'name': 'Relay Team', 'runner_names': sel_names
+                                })
                             st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
                             
                         if st.form_submit_button("🏆 नतिजा सेभ गर्नुहोस्", type="primary"):
@@ -482,29 +573,34 @@ if current_event is not None:
                                 st.error("⚠️ कुनै पनि टिमलाई प्रथम (🥇 1st) स्थान तोकिएको छैन!")
                             else:
                                 conn = db.get_connection()
-                                c = conn.cursor()
-                                for x in res_data:
-                                    # 💡 PostgreSQL Logic: Municipality wins, but we also save the 4 players to results for certificates
-                                    if x['p_ids']:
-                                        for pid in x['p_ids']: 
-                                            c.execute("""
-                                                INSERT INTO results (event_code, municipality_id, player_id, position, score, medal)
-                                                VALUES (%s, %s, %s, %s, %s, %s)
-                                            """, (evt_code, x['mun_id'], pid, x['position'], x['time'], x['medal']))
-                                conn.commit()
-                                c.close()
-                                conn.close()
-                                
-                                st.success("✅ रिलेको नतिजा सुरक्षित भयो!"); st.balloons()
-                                
-                                res_data.sort(key=lambda x: x['position'])
-                                gold = next((x for x in res_data if x['position']==1), None)
-                                silver = next((x for x in res_data if x['position']==2), None)
-                                bronze = next((x for x in res_data if x['position']==3), None)
-                                
-                                res.trigger_live_tv(evt_name, evt_gender, gold, silver, bronze, "relay")
-                                res.display_operator_podium(gold, silver, bronze, 'time', 'name', 'municipality', is_relay=True)
-
+                                if conn:
+                                    try:
+                                        c = conn.cursor()
+                                        for x in res_data:
+                                            if x['p_ids']:
+                                                for pid in x['p_ids']: 
+                                                    import json
+                                                    c.execute("""
+                                                        INSERT INTO results (event_code, municipality_id, player_id, position, score_details, medal)
+                                                        VALUES (%s, %s, %s, %s, %s, %s)
+                                                    """, (evt_code, x['mun_id'], pid, x['position'], json.dumps({"time": x['time']}), x['medal']))
+                                        conn.commit()
+                                        st.success("✅ रिलेको नतिजा सुरक्षित भयो!"); st.balloons()
+                                        
+                                        res_data.sort(key=lambda x: x['position'])
+                                        gold = next((x for x in res_data if x['position']==1), None)
+                                        silver = next((x for x in res_data if x['position']==2), None)
+                                        bronze = next((x for x in res_data if x['position']==3), None)
+                                        
+                                        try:
+                                            res.trigger_live_tv(current_event['name'], current_event['gender'], gold, silver, bronze, "relay")
+                                            res.display_operator_podium(gold, silver, bronze, 'time', 'name', 'municipality', is_relay=True)
+                                        except:
+                                            pass
+                                    except Exception as e:
+                                        st.error(f"DB Error: {e}")
+                                    finally:
+                                        conn.close()
     # ========================================================
     # MODE: FIELD & HIGH JUMP
     # ========================================================
@@ -557,15 +653,32 @@ if current_event is not None:
                             conn = db.get_connection()
                             c = conn.cursor()
                             for idx, item in enumerate(res_list):
-                                if item['best'] > 0:
-                                    rank = idx + 1
-                                    medal = "Gold" if rank == 1 else "Silver" if rank == 2 else "Bronze" if rank == 3 else "Participated"
-                                    # 💡 PostgreSQL Logic: Municipality wins
-                                    c.execute("""
-                                        INSERT INTO results (event_code, municipality_id, player_id, position, score, medal)
-                                        VALUES (%s, %s, %s, %s, %s, %s)
-                                    """, (evt_code, item['mun_id'], item['player_id'], rank, f"{item['best']:.2f}", medal))
-                                    saved_count += 1
+                                rank = idx + 1
+                                
+                                # 💡 यदि स्कोर ० छ भने उसले मेडल पाउँदैन, 'NM' (No Mark) हुन्छ
+                                has_valid_score = (item['best'] > 0)
+                                
+                                # मेडलको लजिक: यदि भ्यालिड स्कोर छ र टप ३ मा पर्छ भने मात्र मेडल, नत्र 'Participated'
+                                if rank == 1 and has_valid_score: medal = "Gold"
+                                elif rank == 2 and has_valid_score: medal = "Silver"
+                                elif rank == 3 and has_valid_score: medal = "Bronze"
+                                else: medal = "Participated"
+                                
+                                import json
+                                # 💡 ० स्कोर ल्याउनेलाई "NM" (No Mark) भनेर सेभ गर्ने
+                                if script_mode == "HighJump":
+                                    display_score = f"{item['best']:.2f}" if has_valid_score else "NM"
+                                    score_data = json.dumps({"best_height": display_score, "failures": item.get('failures', 0)})
+                                else:
+                                    display_score = f"{item['best']:.2f}" if has_valid_score else "NM"
+                                    score_data = json.dumps({"best_score": display_score})
+
+                                # सबै जना (स्कोर भए पनि नभए पनि) डाटाबेसमा जाने भए
+                                c.execute("""
+                                    INSERT INTO results (event_code, municipality_id, player_id, position, score_details, medal)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                """, (evt_code, item['mun_id'], item['player_id'], rank, score_data, medal))
+                                saved_count += 1
                             
                             conn.commit()
                             c.close()
