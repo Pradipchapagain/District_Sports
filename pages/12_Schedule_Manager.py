@@ -73,7 +73,7 @@ with st.expander("➕ नयाँ कार्यक्रम वा सूच�
         
         st.markdown("---")
         st.caption("🚀 **छिटो भर्न टेम्प्लेट छान्नुहोस्:**")
-        if st.button("अतिथि स्वागत टेम्प्लेट", use_container_width=True):
+        if st.button("अतिथि स्वागत टेम्प्लेट", width="stretch"):
             st.session_state.form_title = "हार्दिक स्वागतम्"
             st.session_state.form_desc = "प्रमुख अतिथि तथा विशिष्ट अतिथि महानुभावहरूमा हार्दिक स्वागत गर्दछौं।"
             st.rerun()
@@ -112,14 +112,14 @@ else:
             "event_code": None
         },
         disabled=["id"],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         key="main_sch_editor"
     )
 
     c_edit_1, c_edit_2 = st.columns([1, 4])
     
-    if c_edit_1.button("💾 परिवर्तनहरू सुरक्षित गर्नुहोस्", type="primary", use_container_width=True):
+    if c_edit_1.button("💾 परिवर्तनहरू सुरक्षित गर्नुहोस्", type="primary", width="stretch"):
         conn = db.get_connection()
         c = conn.cursor()
         try:
@@ -142,7 +142,7 @@ else:
     with st.popover("🗑️ आईटम मेटाउनुहोस्"):
         st.write("डिलिट गर्नको लागि आईटमको ID लेख्नुहोस्:")
         del_id = st.number_input("ID:", min_value=1, step=1, key="del_sch_id")
-        if st.button("🔥 Confirm Delete", type="primary", use_container_width=True):
+        if st.button("🔥 Confirm Delete", type="primary", width="stretch"):
             conn = db.get_connection()
             c = conn.cursor()
             c.execute("DELETE FROM schedules WHERE id = %s", (del_id,))

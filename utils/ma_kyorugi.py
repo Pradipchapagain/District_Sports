@@ -141,17 +141,17 @@ def render_panel(evt_code, current_event, players_df, bout_info):
     
     b_t1, b_t2, b_t3 = st.columns([1, 1, 1])
     with b_t1:
-        if st.button("▶️ Start/Resume", disabled=st.session_state[f"{prefix}_timer_running"] or is_game_over, use_container_width=True):
+        if st.button("▶️ Start/Resume", disabled=st.session_state[f"{prefix}_timer_running"] or is_game_over, width="stretch"):
             st.session_state[f"{prefix}_timer_running"] = True
             st.session_state[f"{prefix}_last_start_time"] = time.time()
             st.rerun()
     with b_t2:
-        if st.button("⏸️ Pause", disabled=not st.session_state[f"{prefix}_timer_running"], use_container_width=True):
+        if st.button("⏸️ Pause", disabled=not st.session_state[f"{prefix}_timer_running"], width="stretch"):
             st.session_state[f"{prefix}_timer_running"] = False
             sync_to_db()
             st.rerun()
     with b_t3:
-        if st.button("🏁 End Round", disabled=is_game_over, type="primary", use_container_width=True):
+        if st.button("🏁 End Round", disabled=is_game_over, type="primary", width="stretch"):
             st.session_state[f"{prefix}_timer_running"] = False
             
             s_a = st.session_state[f"{prefix}_a"]
@@ -328,11 +328,11 @@ def render_panel(evt_code, current_event, players_df, bout_info):
     
     with st.expander("📝 Match Log", expanded=False):
         logs = st.session_state[f"{prefix}_logs"]
-        if logs: st.dataframe(pd.DataFrame(logs), use_container_width=True, hide_index=True)
+        if logs: st.dataframe(pd.DataFrame(logs), width="stretch", hide_index=True)
     
     c_res, c_rst = st.columns([3, 1])
     with c_res:
-        if st.button("💾 Save Final Result & Confirm", type="primary" if is_game_over else "secondary", use_container_width=True):
+        if st.button("💾 Save Final Result & Confirm", type="primary" if is_game_over else "secondary", width="stretch"):
             win_id = None
             
             # Winner Logic (First to 2 Round Wins)
@@ -382,7 +382,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
                 st.rerun()
 
     with c_rst:
-        if st.button("🔄 Reset Match", type="secondary", use_container_width=True):
+        if st.button("🔄 Reset Match", type="secondary", width="stretch"):
             keys_to_delete = [k for k in st.session_state.keys() if k.startswith(prefix)]
             for k in keys_to_delete: del st.session_state[k]
             st.rerun()

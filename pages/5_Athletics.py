@@ -174,15 +174,15 @@ if current_event is not None and script_mode is not None:
             
             import utils.live_state as ls 
             
-            if btn1.button("🟢 पहिलो कल", use_container_width=True): 
+            if btn1.button("🟢 पहिलो कल", width="stretch"): 
                 ls.trigger_call(f"{evt_name} - ({evt_gender})", round_name, "FIRST CALL", "#28a745") 
                 st.toast(f"📢 {display_round} को लागि पहिलो कल गरियो!", icon="🟢")
                 
-            if btn2.button("🟡 दोस्रो कल", use_container_width=True): 
+            if btn2.button("🟡 दोस्रो कल", width="stretch"): 
                 ls.trigger_call(f"{evt_name} - ({evt_gender})", round_name, "SECOND CALL", "#ffc107") 
                 st.toast(f"📢 {display_round} को लागि दोस्रो कल गरियो!", icon="🟡")
                 
-            if btn3.button("🔴 अन्तिम कल", use_container_width=True): 
+            if btn3.button("🔴 अन्तिम कल", width="stretch"): 
                 ls.trigger_call(f"{evt_name} - ({evt_gender})", round_name, "LAST & FINAL CALL", "#dc3545") 
                 st.toast(f"📢 {display_round} को लागि अन्तिम कल! खेलाडी ट्र्याकमा।", icon="🔴")
 
@@ -193,7 +193,7 @@ if current_event is not None and script_mode is not None:
         for mun, group in p_df.groupby('municipality'):
             with cols[col_idx % 3]:
                 st.markdown(f"**🏛️ {mun}** ({len(group)} जना)")
-                st.dataframe(group[['name', 'school']], hide_index=True, use_container_width=True)
+                st.dataframe(group[['name', 'school']], hide_index=True, width="stretch")
             col_idx += 1
     
     st.divider()
@@ -228,7 +228,7 @@ if current_event is not None and script_mode is not None:
             lanes = 8 if is_direct_final else c_lane.slider("लेन संख्या:", 4, 8, 6)
             
             st.write("") 
-            if c_btn.button("🎲 जेनेरेट गर्नुहोस्", type="primary", use_container_width=True):
+            if c_btn.button("🎲 जेनेरेट गर्नुहोस्", type="primary", width="stretch"):
                 h_df, cnt = generate_heats(p_df, len(p_df) if is_direct_final else lanes, seeded_muns)
                 if is_direct_final: h_df['heat'] = 'FINAL'
                 st.session_state.heats_data[evt_code] = h_df
@@ -246,7 +246,7 @@ if current_event is not None and script_mode is not None:
                 for h in sorted(h_df['heat'].unique()):
                     with st.container(border=True):
                         st.markdown(f"<h4 style='color:#1f77b4;'>{'🏁 FINAL MATCH' if h=='FINAL' else f'🔥 HEAT {h}'}</h4>", unsafe_allow_html=True)
-                        st.dataframe(h_df[h_df['heat']==h].sort_values('lane')[['lane', 'name', 'municipality']], hide_index=True, use_container_width=True)
+                        st.dataframe(h_df[h_df['heat']==h].sort_values('lane')[['lane', 'name', 'municipality']], hide_index=True, width="stretch")
 
         # --- TAB 2: SELECTION ---
         if not is_direct_final and t2:
@@ -401,7 +401,7 @@ if current_event is not None and script_mode is not None:
             lanes = 8 if is_direct_final else c_lane.slider("लेन संख्या:", 4, 8, 6)
             
             st.write("")
-            if c_btn.button("🎲 तयार गर्नुहोस्", type="primary", use_container_width=True):
+            if c_btn.button("🎲 तयार गर्नुहोस्", type="primary", width="stretch"):
                 h_df, cnt = generate_heats(relay_df, len(relay_df) if is_direct_final else lanes, seeded_teams)
                 if is_direct_final: 
                     h_df['heat'] = 'FINAL'
@@ -439,7 +439,7 @@ if current_event is not None and script_mode is not None:
                             return res.iloc[0]['players_list'] if not res.empty else ""
                             
                         disp['Runners'] = disp['id'].apply(get_runners)
-                        st.dataframe(disp[['lane', 'name', 'Runners']].rename(columns={'name': 'पालिका (Municipality)'}), hide_index=True, use_container_width=True)
+                        st.dataframe(disp[['lane', 'name', 'Runners']].rename(columns={'name': 'पालिका (Municipality)'}), hide_index=True, width="stretch")
 
         # --------------------------------------------------------
         # २. हिट्स छनौट (यदि सिधै फाइनल होइन भने)

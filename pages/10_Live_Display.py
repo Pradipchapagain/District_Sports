@@ -1,3 +1,4 @@
+# pages\10_Live_Display.py 
 import streamlit as st
 import pandas as pd
 import database as db
@@ -46,29 +47,48 @@ st.markdown("""
 # ==========================================
 # 📡 २. डाटा प्रोसेसिङ
 # ==========================================
-@st.cache_data(ttl=5)
+#@st.cache_data(ttl=5)
 def fetch_cached_data_v2(): 
     data = {'active_matches': [], 'tally': pd.DataFrame(), 'headlines': "", 'announcement': None, 'podium': None, 'match_result': None, 'active_call': None}
-    conn = db.get_connection()
+    
+    # 💡 सुधार: यदि 'db_mode' सेसनमा छ भने त्यही लिने, नत्र सिधै db.get_connection()
+    conn = db.get_connection() 
+     
+    if not conn:
+        st.error("❌ डाटाबेस कनेक्सन हुन सकेन!")
+        return data
+
     try:
-        data['active_matches'] = ls.get_all_active_matches()
+        # 💡 महत्वपूर्ण: ls (live_state) फङ्सनहरूमा पनि 'conn' पास गर्नुपर्छ
+        data['active_matches'] = ls.get_all_active_matches(conn) # यहाँ conn थप्नुहोस्
+        
         q = """
-            SELECT m.name as "पालिका", SUM(CASE WHEN r.medal='Gold' THEN 1 ELSE 0 END) as "Gold", SUM(CASE WHEN r.medal='Silver' THEN 1 ELSE 0 END) as "Silver", SUM(CASE WHEN r.medal='Bronze' THEN 1 ELSE 0 END) as "Bronze"
-            FROM results r LEFT JOIN players p ON r.player_id = p.id LEFT JOIN teams t ON r.team_id = t.id 
+            SELECT m.name as "पालिका", 
+                   SUM(CASE WHEN r.medal='Gold' THEN 1 ELSE 0 END) as "Gold", 
+                   SUM(CASE WHEN r.medal='Silver' THEN 1 ELSE 0 END) as "Silver", 
+                   SUM(CASE WHEN r.medal='Bronze' THEN 1 ELSE 0 END) as "Bronze"
+            FROM results r 
+            LEFT JOIN players p ON r.player_id = p.id 
+            LEFT JOIN teams t ON r.team_id = t.id 
             JOIN municipalities m ON m.id = COALESCE(r.municipality_id, p.municipality_id, t.municipality_id)
-            WHERE r.medal IN ('Gold', 'Silver', 'Bronze') GROUP BY m.name ORDER BY "Gold" DESC, "Silver" DESC, "Bronze" DESC LIMIT 10
+            WHERE r.medal IN ('Gold', 'Silver', 'Bronze') 
+            GROUP BY m.name 
+            ORDER BY "Gold" DESC, "Silver" DESC, "Bronze" DESC 
+            LIMIT 10
         """
         data['tally'] = pd.read_sql_query(q, conn)
         data['headlines'] = ls.get_ticker_headlines(conn)
-        data['announcement'] = ls.get_announcement()
-        data['podium'] = ls.get_podium()
-        data['active_call'] = ls.get_active_call()
+        data['announcement'] = ls.get_announcement(conn) # यहाँ conn थप्नुहोस्
+        data['podium'] = ls.get_podium(conn) # यहाँ conn थप्नुहोस्
+        data['active_call'] = ls.get_active_call(conn) # यहाँ conn थप्नुहोस्
+    except Exception as e:
+        print(f"📡 Live Display Error: {e}")
     finally:
         conn.close()
     return data
 
 def play_once(file_name):
-    conn = db.get_connection()
+    conn = db.get_local_connection()
     try: curr_golds = pd.read_sql_query("SELECT COUNT(*) FROM results WHERE medal='Gold'", conn).iloc[0,0]
     except: curr_golds = 0
     finally: conn.close()

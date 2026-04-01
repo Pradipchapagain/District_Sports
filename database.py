@@ -29,40 +29,23 @@ NEON_DB_URL = os.getenv("NEON_DB_URL", 'postgresql://neondb_owner:npg_d2FTQvBN5j
 # ==========================================
 import streamlit as st # URL चिन्नको लागि चाहिन्छ
 
+
 def get_connection():
-    """
-    स्मार्ट कनेक्सन: 
-    १. यदि ब्राउजरमा 'localhost' वा '127.0.0.1' छ भने सिधै LOCAL DB जोड्छ।
-    २. यदि अनलाइन (Streamlit Cloud/HuggingFace) मा छ भने CLOUD DB जोड्छ।
-    ३. यदि इन्टरनेट नभएको बेला अनलाइन खोल्न खोजियो भने LOCAL मा फलब्याक गर्छ।
-    """
+    # 💡 जादु: सबै झन्झट छोडेर सिधै .env को APP_MODE समात्ने
+    mode = os.getenv("APP_MODE", "LOCAL")
     
-    # 💡 ब्राउजरको URL बाट होस्टनेम पत्ता लगाउने (Streamlit को आन्तरिक तरिका)
     try:
-        # यो अलि एडभान्स्ड तरिका हो, सिधै 'LOCAL' मोड छ कि छैन पनि हेर्छौँ
-        is_local_env = False
-        
-        # यदि .env मा 'LOCAL' जबरजस्ती सेट छ भने लोकल नै चलाउने
-        if APP_MODE == "LOCAL":
-            is_local_env = True
-        
-        # डाटाबेस जोड्ने प्रयास
-        if is_local_env:
-            try:
-                return psycopg2.connect(LOCAL_DB_URL)
-            except Exception:
-                # यदि लोकल कनेक्सन फेल भयो भने मात्र क्लाउड ट्राइ गर्ने
-                return psycopg2.connect(NEON_DB_URL)
+        if mode == "LOCAL":
+            # print("🏠 CONNECTING TO LOCAL...")
+            return psycopg2.connect(LOCAL_DB_URL)
         else:
-            try:
-                return psycopg2.connect(NEON_DB_URL)
-            except Exception:
-                # यदि क्लाउड फेल भयो (इन्टरनेट नभएर) भने लोकलमा फर्कने
-                return psycopg2.connect(LOCAL_DB_URL)
-                
+            # print("🌐 CONNECTING TO CLOUD...")
+            return psycopg2.connect(NEON_DB_URL)
     except Exception as e:
-        print(f"🔴 DB CONNECTION ERROR: {e}")
+        print(f"🔴 CONNECTION ERROR: {e}")
         return None
+    
+
 
 def get_cloud_connection():
     """क्लाउड (Neon) बाट डाटा तान्नको लागि मात्र प्रयोग हुने विशेष कनेक्सन"""
@@ -88,22 +71,44 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def authenticate_user(username, password):
-    """प्रयोगकर्ताको लगइन विवरण जाँच गर्छ।"""
+    """
+    प्रयोगकर्ताको लगइन विवरण जाँच गर्छ।
+    यो फङ्सनले सेसनमा छानिएको मोड (LOCAL/CLOUD) अनुसार सही DB मा मात्र चेक गर्छ।
+    """
     pwd = hash_password(password)
-    conn = get_connection()
-    if not conn:
-        return None
-        
+    
+    # 💡 १. लगइन गर्दा छानिएको मोड हेर्ने, नत्र डिफोल्ट मोड लिने
+    mode = st.session_state.get('db_mode', APP_MODE)
+    
+    # 💡 २. get_connection लाई मोड पास गर्ने (यदि हजुरको get_connection ले मोड लिन्छ भने)
+    # यदि लिँदैन भने सिधै यहाँ कनेक्सन लजिक राख्नु सुरक्षित हुन्छ
     try:
+        if mode == "LOCAL":
+            conn = psycopg2.connect(LOCAL_DB_URL)
+        else:
+            conn = psycopg2.connect(NEON_DB_URL)
+            
+        if not conn:
+            return None
+            
         c = conn.cursor(cursor_factory=extras.RealDictCursor)
+        
+        # 💡 ३. पासवर्ड कोलमको नाम 'password_hash' नै हो भने यो ठीक छ
         c.execute("SELECT * FROM users WHERE username=%s AND password_hash=%s", (username, pwd))
         user = c.fetchone()
+        
+        # 💡 ४. यदि युजर भेटियो भने, यो कुन मोडबाट आएको हो भनेर 'चिन्ह' लगाउने
+        if user:
+            user['logged_db_mode'] = mode
+            
         return user
+        
     except Exception as e:
-        print(f"🔴 Login Error: {e}")
+        print(f"🔴 Login Error ({mode}): {e}")
         return None
     finally:
-        if conn:
+        # यहाँ 'conn' डिफाइन भएको छ कि छैन चेक गरेर मात्र क्लोज गर्ने
+        if 'conn' in locals() and conn:
             conn.close()
 
 # ==========================================
@@ -254,23 +259,6 @@ def add_player(municipality_id, iemis_id, name, gender, dob_bs, school_name, cla
     finally:
         c.close(); conn.close()
 
-def add_player(municipality_id, iemis_id, name, gender, dob_bs, school_name, class_val, guardian_name="", contact_no="", photo_path=None):
-    """नयाँ खेलाडी दर्ता गर्छ र उत्पन्न भएको ID फर्काउँछ।"""
-    conn = get_connection()
-    c = conn.cursor()
-    try:
-        c.execute("""
-            INSERT INTO players (municipality_id, iemis_id, name, gender, dob_bs, school_name, class_val, guardian_name, contact_no, photo_path)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-        """, (municipality_id, iemis_id, name, gender, dob_bs, school_name, class_val, guardian_name, contact_no, photo_path))
-        player_id = c.fetchone()[0]
-        conn.commit()
-        return player_id, "Success"
-    except Exception as e:
-        conn.rollback()
-        return None, str(e)
-    finally:
-        c.close(); conn.close()
     
 def update_player_info(player_id, iemis_id, name, dob_bs, school_name, class_val, guardian_name, contact_no):
     """खेलाडीको व्यक्तिगत विवरण अद्यावधिक गर्छ।"""
@@ -695,11 +683,16 @@ def create_tables():
             
             # २. खेलाडी र दर्ता
             "CREATE TABLE IF NOT EXISTS players (id SERIAL PRIMARY KEY, municipality_id INTEGER REFERENCES municipalities(id) ON DELETE CASCADE, iemis_id VARCHAR(50), name VARCHAR(255) NOT NULL, gender VARCHAR(20) NOT NULL, dob_bs VARCHAR(20), school_name VARCHAR(255), class_val VARCHAR(50), guardian_name VARCHAR(255), contact_no VARCHAR(50), photo_path TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
-            "CREATE TABLE IF NOT EXISTS registrations (id SERIAL PRIMARY KEY, player_id INTEGER REFERENCES players(id) ON DELETE CASCADE, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, municipality_id INTEGER REFERENCES municipalities(id), UNIQUE(player_id, event_code))",
+            
+            # 💡 सुधार १: jersey_no थपिएको छ र लाइनको अन्त्यमा कमा (,) छुटेको थियो, त्यो मिलाइएको छ।
+            "CREATE TABLE IF NOT EXISTS registrations (id SERIAL PRIMARY KEY, player_id INTEGER REFERENCES players(id) ON DELETE CASCADE, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, municipality_id INTEGER REFERENCES municipalities(id), jersey_no VARCHAR(10), UNIQUE(player_id, event_code))",
+            
             "CREATE TABLE IF NOT EXISTS teams (id SERIAL PRIMARY KEY, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, municipality_id INTEGER REFERENCES municipalities(id) ON DELETE CASCADE, name VARCHAR(255) NOT NULL)",
             
             # ३. खेल सञ्चालन र नतिजा
-            "CREATE TABLE IF NOT EXISTS matches (id SERIAL PRIMARY KEY, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, match_no INTEGER NOT NULL, round_name VARCHAR(100), title VARCHAR(255), comp1_muni_id INTEGER REFERENCES municipalities(id), comp2_muni_id INTEGER REFERENCES municipalities(id), winner_muni_id INTEGER REFERENCES municipalities(id), status VARCHAR(50) DEFAULT 'Pending', live_state JSONB DEFAULT '{}'::jsonb, source_match1 INTEGER, source_match2 INTEGER, team1_id INTEGER, team2_id INTEGER, winner_team_id INTEGER)",
+            # 💡 सुधार २: matches टेबलमा 'score_summary JSONB' थपिएको छ।
+            "CREATE TABLE IF NOT EXISTS matches (id SERIAL PRIMARY KEY, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, match_no INTEGER NOT NULL, round_name VARCHAR(100), title VARCHAR(255), comp1_muni_id INTEGER REFERENCES municipalities(id), comp2_muni_id INTEGER REFERENCES municipalities(id), winner_muni_id INTEGER REFERENCES municipalities(id), status VARCHAR(50) DEFAULT 'Pending', live_state JSONB DEFAULT '{}'::jsonb, source_match1 INTEGER, source_match2 INTEGER, team1_id INTEGER, team2_id INTEGER, winner_team_id INTEGER, score_summary JSONB)",
+            
             "CREATE TABLE IF NOT EXISTS results (id SERIAL PRIMARY KEY, event_code VARCHAR(50) REFERENCES events(code) ON DELETE CASCADE, municipality_id INTEGER REFERENCES municipalities(id) NOT NULL, player_id INTEGER REFERENCES players(id) NULL, team_id INTEGER REFERENCES teams(id) NULL, position INTEGER NOT NULL, medal VARCHAR(50), score_details JSONB, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
             
             # ४. मार्शल आर्ट्स विशेष (MA Brackets)
@@ -711,6 +704,9 @@ def create_tables():
             "CREATE TABLE IF NOT EXISTS officials (id SERIAL PRIMARY KEY, municipality_id INTEGER REFERENCES municipalities(id) ON DELETE CASCADE, role VARCHAR(100), name VARCHAR(255) NOT NULL, phone VARCHAR(50))",
             "CREATE TABLE IF NOT EXISTS live_match (id SERIAL PRIMARY KEY, event_code VARCHAR(50), bout_id VARCHAR(50), event_name VARCHAR(255), round_name VARCHAR(100), player1 VARCHAR(255), player2 VARCHAR(255), score_a VARCHAR(50) DEFAULT '0', score_b VARCHAR(50) DEFAULT '0', pen_a INTEGER DEFAULT 0, pen_b INTEGER DEFAULT 0, senshu VARCHAR(10), timer VARCHAR(10) DEFAULT '00:00', voting_open INTEGER DEFAULT 0, j1_vote VARCHAR(10), j2_vote VARCHAR(10), j3_vote VARCHAR(10), j4_vote VARCHAR(10), j5_vote VARCHAR(10))",
             "CREATE TABLE IF NOT EXISTS schedules (id SERIAL PRIMARY KEY, day_name VARCHAR(50), schedule_time VARCHAR(100), title VARCHAR(255), description TEXT, event_code VARCHAR(50), is_completed INTEGER DEFAULT 0, schedule_order INTEGER)",
+            
+            # 💡 सुधार ३: भलिबलको लाइभ टिभी डिस्प्लेको लागि छुट्टै टेबल थपिएको छ
+            "CREATE TABLE IF NOT EXISTS vb_live_match (id SERIAL PRIMARY KEY, match_title TEXT, team_a TEXT, team_b TEXT, score_a INTEGER, score_b INTEGER, sets_a INTEGER, sets_b INTEGER, timeout_a INTEGER, timeout_b INTEGER, serving TEXT, state_json TEXT)",
             
             # ६. अडिट लग
             "CREATE TABLE IF NOT EXISTS audit_logs (id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id), action VARCHAR(255), table_name VARCHAR(100), row_id INTEGER, old_value TEXT, new_value TEXT, ip_address VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
@@ -734,12 +730,12 @@ def create_tables():
         db_info = c.fetchone()
         print(f"🔍 ACTUAL CONNECTION: Database: {db_info[0]}, User: {db_info[1]}, Port: {db_info[2]}")
 
-
-
-
-        
         conn.commit()
-        print(f"✅ Database Tables updated successfully in {APP_MODE} mode!")
+        
+        # मोड तान्ने (APP_MODE तपाईंको .env बाट आउँछ)
+        import os
+        app_mode = os.getenv("APP_MODE", "UNKNOWN")
+        print(f"✅ Database Tables updated successfully in {app_mode} mode!")
         
         # यी फङ्सनहरू तपाईंसँग पहिल्यै हुनुपर्छ
         if 'seed_admin_user' in globals(): seed_admin_user(conn)
@@ -747,10 +743,11 @@ def create_tables():
         
     except Exception as e:
         print(f"❌ Setup Error: {e}")
+        if 'conn' in locals(): conn.rollback()
     finally:
         if 'c' in locals(): c.close()
         if 'conn' in locals(): conn.close()
-        
+                
 
 def create_default_admin():
     """Home.py ले खोजेको एडमिन बनाउने फङ्सन"""

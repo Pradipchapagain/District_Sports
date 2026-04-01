@@ -102,7 +102,7 @@ def get_live_match() -> Optional[Dict]:
 def set_announcement(title: str, subtitle: str = "") -> None:
     _save_state("announcement", {"title": title, "subtitle": subtitle})
 
-def get_announcement() -> Optional[Dict]:
+def get_announcement(conn=None) -> Optional[Dict]:
     return _get_state("announcement")
 
 # ==========================================
@@ -447,18 +447,25 @@ def clear_call():
             conn.close()
 
 
-def get_active_call():
+def get_active_call(conn=None):
     """टिभीको लागि एक्टिभ कल तान्ने (६० सेकेन्डपछि स्वतः हट्ने प्रणालीसहित)"""
     import json
     import database as db
     from datetime import datetime
     
-    conn = db.get_connection()
+    # 💡 १. बाहिरबाट conn आएको छ कि छैन चेक गर्ने
+    should_close = False
+    if not conn:
+        conn = db.get_connection()
+        should_close = True
+        
     if not conn: return None
+    
     try:
         c = conn.cursor()
         c.execute("SELECT state_data FROM system_states WHERE state_key = 'active_call'")
         row = c.fetchone()
+        
         if row and row[0]:
             call_data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
             
@@ -473,14 +480,18 @@ def get_active_call():
                     
             return call_data
         return None
+        
     except Exception as e:
         print(f"Get Call Error: {e}")
         return None
     finally:
-        conn.close()
+        # 💡 २. यदि यही फङ्सनले नयाँ कनेक्सन खोलेको हो भने मात्र बन्द गर्ने
+        # नत्र Live_Display को कनेक्सन बिचमै टुट्छ!
+        if should_close and conn:
+            conn.close()
 
 
-def get_podium():
+def get_podium(conn=None):
     """टिभीमा देखाउनको लागि डाटाबेसबाट पोडियमको नतिजा तान्ने"""
     import json
     import database as db

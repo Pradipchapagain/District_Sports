@@ -228,7 +228,7 @@ def render_panel(evt_code, current_event, players_df):
                         clean_p = player.split(' [ID:')[0]
                         with cols[idx % 2]:
                             draw_data[player] = st.number_input(f"{clean_p} को स्लट नं:", min_value=1, max_value=next_power_of_2, step=1, key=f"slot_{evt_code}_{idx}")                    
-                    if st.form_submit_button("💾 टाइसिट डाटाबेसमा सेभ गर्नुहोस्", type="primary", use_container_width=True):
+                    if st.form_submit_button("💾 टाइसिट डाटाबेसमा सेभ गर्नुहोस्", type="primary", width="stretch"):
                         chosen_slots = list(draw_data.values())
                         if len(chosen_slots) != len(set(chosen_slots)):
                             st.error("❌ एउटै स्लट नम्बर दुई जनालाई दिन मिल्दैन!")
@@ -309,14 +309,14 @@ def render_panel(evt_code, current_event, players_df):
                                     if "BYE" in full_bout_str: st.caption("⚠️ अटो-पास (BYE)")
                             
                             with c_call:
-                                if st.button("📢 Call", key=f"call_{evt_code}_{bout_id}", disabled=is_completed or has_tbd or "BYE" in full_bout_str, use_container_width=True):
+                                if st.button("📢 Call", key=f"call_{evt_code}_{bout_id}", disabled=is_completed or has_tbd or "BYE" in full_bout_str, width="stretch"):
                                     import utils.live_state as ls
                                     ls.trigger_call(f"{current_event['name']} {current_event.get('gender', '')}", r_name, "PLAYERS TO MAT", "#d32f2f")
                                     st.toast("खेलाडीलाई बोलाइयो!")
                             
                             with c_cast:
                                 btn_label, btn_type = ("🔴 LIVE", "primary") if is_active else ("📡 Broadcast", "secondary")
-                                if st.button(btn_label, key=f"cast_{evt_code}_{bout_id}", disabled=is_completed or has_tbd or "BYE" in full_bout_str, type=btn_type, use_container_width=True):
+                                if st.button(btn_label, key=f"cast_{evt_code}_{bout_id}", disabled=is_completed or has_tbd or "BYE" in full_bout_str, type=btn_type, width="stretch"):
                                     st.session_state.active_bout_data = b
                                     st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
@@ -345,7 +345,7 @@ def render_panel(evt_code, current_event, players_df):
                                         
                     if not is_voting_open:
                         st.info("⏳ खेलाडी प्रदर्शन गर्दैछन्... प्रदर्शन सकिएपछि भोटिङ खुल्ला गर्नुहोस्।")
-                        if st.button("🚦 भोटिङ खुल्ला गर्नुहोस् (Start Voting)", type="primary", use_container_width=True):
+                        if st.button("🚦 भोटिङ खुल्ला गर्नुहोस् (Start Voting)", type="primary", width="stretch"):
                             st.session_state[voting_state_key] = True
                             st.rerun()
                     else:
@@ -364,10 +364,10 @@ def render_panel(evt_code, current_event, players_df):
                             if is_ao: ao_votes += 1
 
                             with c_aka:
-                                if st.button("✅ 🔴 AKA" if is_aka else "🔴 AKA", key=f"btn_aka_{vote_key}", use_container_width=True):
+                                if st.button("✅ 🔴 AKA" if is_aka else "🔴 AKA", key=f"btn_aka_{vote_key}", width="stretch"):
                                     st.session_state[vote_key] = 'Aka'; st.rerun()
                             with c_ao:
-                                if st.button("✅ 🔵 AO" if is_ao else "🔵 AO", key=f"btn_ao_{vote_key}", use_container_width=True):
+                                if st.button("✅ 🔵 AO" if is_ao else "🔵 AO", key=f"btn_ao_{vote_key}", width="stretch"):
                                     st.session_state[vote_key] = 'Ao'; st.rerun()
 
                         st.markdown(f"<h2 style='text-align:center; background:#f8fafc; padding:10px; border-radius:10px; margin-top:20px;'>📊 🔴 {aka_votes} - 🔵 {ao_votes}</h2>", unsafe_allow_html=True)
@@ -380,7 +380,7 @@ def render_panel(evt_code, current_event, players_df):
                             
                             c_conf, c_reset = st.columns(2)
                             with c_conf:
-                                if st.button("✅ पक्का (Confirm)", type="primary", use_container_width=True):
+                                if st.button("✅ पक्का (Confirm)", type="primary", width="stretch"):
                                     import utils.live_state as ls
                                     ls.trigger_kata_result(current_event['name'], bout_id, p1.split(' [ID:')[0], p2.split(' [ID:')[0], votes_list, winner)
                                     
@@ -391,7 +391,7 @@ def render_panel(evt_code, current_event, players_df):
                                     sync_progress_to_db(evt_code)
                                     st.toast("नतिजा सुरक्षित भयो!"); st.rerun()
                             with c_reset:
-                                if st.button("🔄 सच्याउनुहोस्", type="secondary", use_container_width=True):
+                                if st.button("🔄 सच्याउनुहोस्", type="secondary", width="stretch"):
                                     for j in range(1, 6): st.session_state[f"vote_{evt_code}_{bout_id}_j{j}"] = None
                                     st.rerun()
 

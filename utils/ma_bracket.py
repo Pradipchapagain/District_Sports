@@ -302,7 +302,7 @@ def run_tournament(evt_code, current_event, players_df, scoring_panel_func):
                 for b in b_list:
                     st.warning(f"🥉 Bronze: {b.split(' [ID:')[0]}")
 
-                if st.button("💾 Finalize Medal Podium on Cloud", type="primary", use_container_width=True):
+                if st.button("💾 Finalize Medal Podium on Cloud", type="primary", width="stretch"):
                     def ext_ids(s_val):
                         if not s_val: return None, None
                         p_match = re.search(r"\[ID:\s*(\d+)\]", s_val)

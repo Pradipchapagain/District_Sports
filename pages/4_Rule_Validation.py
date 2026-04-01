@@ -22,7 +22,7 @@ st.divider()
 # ==========================================
 c1, c2 = st.columns([1, 2])
 with c1:
-    run_check = st.button("🚀 सम्पूर्ण नियमहरू जाँच गर्नुहोस् (Run Full Validation)", type="primary", use_container_width=True)
+    run_check = st.button("🚀 सम्पूर्ण नियमहरू जाँच गर्नुहोस् (Run Full Validation)", type="primary", width="stretch")
 with c2:
     st.info("👈 यो बटन थिचेर डाटाबेसमा रहेका सबै खेलाडी र पालिकाहरूको दर्ता जाँच गर्नुहोस्।")
 
@@ -36,7 +36,7 @@ if run_check:
         if v1.empty: st.success("✅ एथ्लेटिक्सका सबै नियम पालना भएका छन्।")
         else:
             st.error(f"❌ {len(v1)} वटा उल्लंघन भेटियो!")
-            st.dataframe(v1, use_container_width=True)
+            st.dataframe(v1, width="stretch")
         st.divider()
 
         # २. मार्सल आर्ट्स (Sparring Weight)
@@ -46,7 +46,7 @@ if run_check:
         if v2.empty: st.success("✅ मार्सल आर्ट्सका सबै नियम पालना भएका छन्।")
         else:
             st.error(f"❌ {len(v2)} वटा उल्लंघन भेटियो!")
-            st.dataframe(v2, use_container_width=True)
+            st.dataframe(v2, width="stretch")
         st.divider()
 
         # ३. टिम संख्या (Team Size)
@@ -56,7 +56,7 @@ if run_check:
         if v3.empty: st.success("✅ टिम संख्याका सबै नियम पालना भएका छन्।")
         else:
             st.error(f"❌ {len(v3)} वटा उल्लंघन भेटियो!")
-            st.dataframe(v3, use_container_width=True)
+            st.dataframe(v3, width="stretch")
         st.divider()
 
         # ४. एथलेटिक्स एकल दर्ता सीमा
@@ -66,7 +66,7 @@ if run_check:
         if v4.empty: st.success("✅ एकल दर्ता सीमाका सबै नियम पालना भएका छन्।")
         else:
             st.error(f"❌ {len(v4)} वटा उल्लंघन भेटियो!")
-            st.dataframe(v4, use_container_width=True)
+            st.dataframe(v4, width="stretch")
         st.divider()
 
         # ५. मार्सल आर्ट्स प्रदर्शन सीमा
@@ -76,7 +76,7 @@ if run_check:
         if v5.empty: st.success("✅ मार्सल आर्ट्स प्रदर्शन तर्फका सबै नियम पालना भएका छन्।")
         else:
             st.error(f"❌ {len(v5)} वटा उल्लंघन भेटियो!")
-            st.dataframe(v5, use_container_width=True)
+            st.dataframe(v5, width="stretch")
         st.divider()
 
         # ६. उमेर हदबन्दी
@@ -87,7 +87,7 @@ if run_check:
         if v6.empty: st.success(f"✅ सबै खेलाडी उमेर हदबन्दी भित्र छन्।")
         else:
             st.error(f"❌ {len(v6)} जना खेलाडी अयोग्य (Over Age) भेटिए!")
-            st.dataframe(v6, use_container_width=True)
+            st.dataframe(v6, width="stretch")
         st.divider()
 
         # ===============================================
@@ -103,7 +103,7 @@ if run_check:
         if v7.empty: st.success("✅ कुनै पनि जेन्डर म्याच (Gender Mismatch) गल्ती भेटिएन।")
         else:
             st.error(f"❌ {len(v7)} वटा जेन्डर म्याच गल्ती भेटियो! (कृपया सच्याउनुहोस्)")
-            st.dataframe(v7, use_container_width=True)
+            st.dataframe(v7, width="stretch")
         st.divider()
 
         # ८. दोहोरो EMIS कोड
@@ -113,7 +113,7 @@ if run_check:
         if v8.empty: st.success("✅ कुनै पनि दोहोरो EMIS ID दर्ता भेटिएन।")
         else:
             st.error(f"❌ {len(v8)} वटा दोहोरो EMIS ID भेटियो!")
-            st.dataframe(v8, use_container_width=True)
+            st.dataframe(v8, width="stretch")
         st.divider()
 
         # ९. दोहोरो टिम गेम (Config बाट कन्ट्रोल हुने)
@@ -130,7 +130,7 @@ if run_check:
             if v9.empty: st.success("✅ कुनै पनि खेलाडीले २ वटा टिम गेम खेलेका छैनन्।")
             else:
                 st.error(f"❌ {len(v9)} जना खेलाडीले १ भन्दा बढी टिम गेम खेलेको भेटियो!")
-                st.dataframe(v9, use_container_width=True)
+                st.dataframe(v9, width="stretch")
         st.divider()
 
         # १०. पालिका खेलाडी कोटा (Palika Quota)
@@ -141,7 +141,7 @@ if run_check:
         if v10.empty: st.success(f"✅ सबै पालिकाहरू तोकिएको कोटा ({max_quota} जना) भित्रै छन्।")
         else:
             st.error(f"❌ {len(v10)} वटा पालिकाले कोटाभन्दा बढी खेलाडी दर्ता गरेका छन्!")
-            st.dataframe(v10, use_container_width=True)
+            st.dataframe(v10, width="stretch")
         st.divider()
         
         # ===============================================
@@ -207,7 +207,7 @@ if run_check:
             st.success(f"✅ नियम पालना गर्ने पालिकाहरू ({len(compliant_palikas)})")
             if compliant_palikas:
                 clean_list = pd.DataFrame(compliant_palikas, columns=["पालिकाको नाम"])
-                st.dataframe(clean_list, use_container_width=True, hide_index=True)
+                st.dataframe(clean_list, width="stretch", hide_index=True)
             else:
                 st.info("कुनै पनि पालिका पूर्ण रूपमा नियम पालना गर्ने भेटिएनन्।")
 
@@ -215,7 +215,7 @@ if run_check:
             st.error(f"❌ नियम उलङ्घन गर्ने पालिकाहरू ({len(non_compliant_palikas)})")
             if non_compliant_palikas:
                 df_red = pd.DataFrame(non_compliant_palikas, columns=["पालिकाको नाम", "मिचेका नियमहरू"])
-                st.dataframe(df_red, use_container_width=True, hide_index=True)
+                st.dataframe(df_red, width="stretch", hide_index=True)
             else:
                 st.success("बधाई छ! कुनै पनि पालिकाले नियम उलङ्घन गरेका छैनन्।")
 

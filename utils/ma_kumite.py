@@ -171,16 +171,16 @@ def render_panel(evt_code, current_event, players_df, bout_info):
     
     b_t1, b_t2, b_t3 = st.columns([1, 1, 1])
     with b_t1:
-        if st.button("▶️ Start", disabled=st.session_state[f"{prefix}_timer_running"] or is_game_over, use_container_width=True):
+        if st.button("▶️ Start", disabled=st.session_state[f"{prefix}_timer_running"] or is_game_over, width="stretch"):
             st.session_state[f"{prefix}_timer_running"] = True
             st.session_state[f"{prefix}_last_start_time"] = time.time()
             st.rerun()
     with b_t2:
-        if st.button("⏸️ Pause", disabled=not st.session_state[f"{prefix}_timer_running"], use_container_width=True):
+        if st.button("⏸️ Pause", disabled=not st.session_state[f"{prefix}_timer_running"], width="stretch"):
             st.session_state[f"{prefix}_timer_running"] = False
             sync_to_db(); st.rerun()
     with b_t3:
-        if st.button("🛑 End Match", disabled=is_game_over, type="primary", use_container_width=True):
+        if st.button("🛑 End Match", disabled=is_game_over, type="primary", width="stretch"):
             st.session_state[f"{prefix}_timer_running"] = False
             st.session_state[f"{prefix}_game_over"] = True
             sync_to_db(); st.rerun()
@@ -231,12 +231,12 @@ def render_panel(evt_code, current_event, players_df, bout_info):
         st.markdown("<div style='text-align:center; margin:30px 0 10px 0; font-weight:bold; color:#64748b;'>SENSHU</div>", unsafe_allow_html=True)
         if not senshu:
             c1, c2 = st.columns(2)
-            if c1.button("🔴", disabled=is_game_over, use_container_width=True): st.session_state[f"{prefix}_senshu"] = 'Red'; sync_to_db(); st.rerun()
-            if c2.button("🔵", disabled=is_game_over, use_container_width=True): st.session_state[f"{prefix}_senshu"] = 'Blue'; sync_to_db(); st.rerun()
+            if c1.button("🔴", disabled=is_game_over, width="stretch"): st.session_state[f"{prefix}_senshu"] = 'Red'; sync_to_db(); st.rerun()
+            if c2.button("🔵", disabled=is_game_over, width="stretch"): st.session_state[f"{prefix}_senshu"] = 'Blue'; sync_to_db(); st.rerun()
         else:
             col = "#dc2626" if senshu == 'Red' else "#2563eb"
             st.markdown(f"<div style='text-align:center; background-color:{col}; color:white; padding:8px; border-radius:5px; font-weight:bold;'>CLAIMED</div>", unsafe_allow_html=True)
-            if st.button("❌ Undo", disabled=is_game_over, use_container_width=True): st.session_state[f"{prefix}_senshu"] = None; sync_to_db(); st.rerun()
+            if st.button("❌ Undo", disabled=is_game_over, width="stretch"): st.session_state[f"{prefix}_senshu"] = None; sync_to_db(); st.rerun()
 
     with c_sb:
         st.markdown(f"<div style='border:4px solid #2563eb; border-radius:10px; padding:20px; background-color:#eff6ff;'><h1 style='text-align:center; color:#2563eb; font-size:90px; margin:0;'>{s_b}</h1><h3 style='text-align:center; color:#2563eb; margin:5px 0;'>🔵 AO</h3><div style='font-size:16px; text-align:center; font-weight:bold; color:#1d4ed8;'>{p_b_name}</div>{get_penalty_ui(pen_b)}</div>", unsafe_allow_html=True)
@@ -288,8 +288,8 @@ def render_panel(evt_code, current_event, players_df, bout_info):
         if is_tie and not st.session_state[f"{prefix}_hantei"]:
             st.warning("⚠️ स्कोर बराबर छ! कृपया जजहरूको निर्णय (HANTEI) अनुसार विजेता छान्नुहोस्:")
             h1, h2 = st.columns(2)
-            if h1.button("🚩 AKA Wins (Hantei)", use_container_width=True): st.session_state[f"{prefix}_hantei"] = 'AKA'; st.rerun()
-            if h2.button("🎌 AO Wins (Hantei)", use_container_width=True): st.session_state[f"{prefix}_hantei"] = 'AO'; st.rerun()
+            if h1.button("🚩 AKA Wins (Hantei)", width="stretch"): st.session_state[f"{prefix}_hantei"] = 'AKA'; st.rerun()
+            if h2.button("🎌 AO Wins (Hantei)", width="stretch"): st.session_state[f"{prefix}_hantei"] = 'AO'; st.rerun()
             st.stop()
             
         if st.session_state[f"{prefix}_hantei"]:
@@ -298,7 +298,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
         c_rev, c_rst = st.columns([3, 1])
         with c_rev:
             if not st.session_state[f"{prefix}_winner_revealed"]:
-                if st.button("💾 Save Match Result to Bracket", type="primary", use_container_width=True):
+                if st.button("💾 Save Match Result to Bracket", type="primary", width="stretch"):
                     win_id = None
                     if pen_a >= 5: win_id = bout_info['p2']
                     elif pen_b >= 5: win_id = bout_info['p1']
@@ -351,7 +351,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
                 st.success("✅ Winner has been published to Database.")
 
         with c_rst:
-            if st.button("🔄 Reset Scoreboard", type="secondary", use_container_width=True):
+            if st.button("🔄 Reset Scoreboard", type="secondary", width="stretch"):
                 keys_to_delete = [k for k in st.session_state.keys() if k.startswith(prefix)]
                 for k in keys_to_delete: del st.session_state[k]
                 st.rerun()

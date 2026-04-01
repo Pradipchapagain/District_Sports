@@ -78,13 +78,13 @@ with tab1:
                     winner = df_tally.iloc[0]
                     st.success(f"🏆 हालको अग्रता (Leading): **{winner['Municipality']}** (स्वर्ण: {winner['Gold']} | पोइन्ट: {winner['Points']})")
                     
-                    st.dataframe(df_tally, use_container_width=True, column_config={
+                    st.dataframe(df_tally, width="stretch", column_config={
                         "Municipality": "पालिका (Municipality)", "Gold": "🥇 Gold", "Silver": "🥈 Silver", "Bronze": "🥉 Bronze", "Total Medals": "Total",
                         "Points": st.column_config.ProgressColumn("Points", format="%d", min_value=0, max_value=int(df_tally['Points'].max()))
                     })
                     
                     fig = px.bar(df_tally, x='Municipality', y=['Gold', 'Silver', 'Bronze'], title="Medal Distribution by Municipality", color_discrete_map={'Gold': '#FFD700', 'Silver': '#C0C0C0', 'Bronze': '#CD7F32'})
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
             except Exception as e:
                 st.error(f"Error loading medal tally: {e}")
         conn.close()
@@ -123,7 +123,7 @@ with tab2:
             def highlight_cat(row):
                 cols = {'Athletics': 'background-color: #e8f8f5', 'Team Game': 'background-color: #fef9e7', 'Martial Arts': 'background-color: #f4ecf7'}
                 return [cols.get(row['Category'], '')] * len(row)
-            st.dataframe(df_event_view.style.apply(highlight_cat, axis=1), use_container_width=True, hide_index=True)
+            st.dataframe(df_event_view.style.apply(highlight_cat, axis=1), width="stretch", hide_index=True)
 
 # ==========================================
 # TAB 3: खेलाडी/टिम खोज (SEARCH)
@@ -143,7 +143,7 @@ with tab3:
             if search_res.empty:
                 st.error("कुनै विवरण भेटिएन।")
             else:
-                st.dataframe(search_res, use_container_width=True, hide_index=True)
+                st.dataframe(search_res, width="stretch", hide_index=True)
                 selected_pid = search_res.iloc[0]['PlayerID'] 
                 st.markdown(f"##### 🏅 {search_res.iloc[0]['PlayerName']} को नतिजा विवरण:")
                 res_q = """
@@ -231,7 +231,7 @@ with tab5:
                     st.warning("⚠️ यस खेलको नतिजा हालसम्म प्रणालीमा दर्ता भएको छैन।")
                 else:
                     st.success(f"✅ जम्मा {len(winners_df)} जना विजेताहरू (स्वर्ण, रजत, कांस्य) भेटिए!")
-                    st.dataframe(winners_df, use_container_width=True)
+                    st.dataframe(winners_df, width="stretch")
                     
                     # ३. PDF जेनेरेट गर्ने र डाउनलोड गर्ने लजिक
                     if st.button("🚀 PDF प्रमाणपत्र जनरेट गर्नुहोस्", type="primary"):
@@ -272,12 +272,12 @@ with tab6:
             st.markdown("""<div style='background:#f8fafc; padding:20px; border-radius:10px; border-left: 5px solid #3b82f6;'><h4>📋 खेलाडी मास्टर लिस्ट (Master List)</h4><p style='color:gray;'>दर्ता भएका सबै खेलाडीको पूर्ण विवरण</p></div><br>""", unsafe_allow_html=True)
             df_all_players = pd.read_sql_query("SELECT p.name as Name, p.gender as Gender, p.dob as DOB, p.school_name as School, m.name as Municipality FROM players p JOIN municipalities m ON p.municipality_id = m.id", conn)
             if not df_all_players.empty:
-                st.download_button("⬇️ डाउनलोड खेलाडी विवरण (CSV)", data=df_all_players.to_csv(index=False).encode('utf-8'), file_name="PRS_All_Players.csv", mime="text/csv", use_container_width=True)
+                st.download_button("⬇️ डाउनलोड खेलाडी विवरण (CSV)", data=df_all_players.to_csv(index=False).encode('utf-8'), file_name="PRS_All_Players.csv", mime="text/csv", width="stretch")
                 
         with col_d2:
             st.markdown("""<div style='background:#f8fafc; padding:20px; border-radius:10px; border-left: 5px solid #22c55e;'><h4>🏆 विस्तृत नतिजा पाना (Results Sheet)</h4><p style='color:gray;'>सबै खेलको विजेताहरूको अन्तिम सूची</p></div><br>""", unsafe_allow_html=True)
             if 'raw_df' in locals() and not raw_df.empty: # Tab 2 को डाटा
-                st.download_button("⬇️ डाउनलोड नतिजा विवरण (CSV)", data=raw_df.to_csv(index=False).encode('utf-8'), file_name="PRS_Detailed_Results.csv", mime="text/csv", use_container_width=True)
+                st.download_button("⬇️ डाउनलोड नतिजा विवरण (CSV)", data=raw_df.to_csv(index=False).encode('utf-8'), file_name="PRS_Detailed_Results.csv", mime="text/csv", width="stretch")
             else:
                 st.info("नतिजा डाटा उपलब्ध छैन।")
         conn.close()

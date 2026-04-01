@@ -1354,7 +1354,7 @@ c1, c2 = st.columns([3, 1])
 with c1:
     st.info("💡 **आधिकारिक दस्तावेज:** यो नियम पुस्तिका (Rulebook) आधिकारिक हो। राष्ट्रपति रनिङ शिल्डमा सहभागी सबै पालिका र टोलीले यसको पूर्ण रूपमा पालना गर्नुपर्नेछ।")
 with c2:
-    if st.button("📥 नियम पुस्तिका डाउनलोड (PDF)", type="primary", use_container_width=True):
+    if st.button("📥 नियम पुस्तिका डाउनलोड (PDF)", type="primary", width="stretch"):
         st.toast("PDF फाइल तयार भइरहेको छ। चाँडै उपलब्ध हुनेछ!", icon="⏳")
 
 # यदि render_footer() भन्ने छुट्टै फङ्सन छ भने कल गर्ने:

@@ -1,462 +1,362 @@
 import pandas as pd
-import io
+import re
 from io import BytesIO
+from datetime import datetime
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from datetime import datetime
-import re
 
-# ==========================================
-# 🏃 Track & Field PDF Generators
-# ==========================================
-def generate_heat_sheet_pdf(event_info, heats_df, CONFIG):
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=15, bottomMargin=80)
-    elements = []
+# ==============================================================
+# 💡 १. साझा हेडर (Common Header) - सबै PDF मा अटोमेटिक आउने
+# ==============================================================
+def get_official_header(event_info, CONFIG, document_title):
+    """यसले हेडरको डिजाइन तयार गरेर Elements को लिस्ट फर्काउँछ"""
     styles = getSampleStyleSheet()
-    
-    evt_name_en = event_info['name']
-    gender_en = event_info['gender']
-    category_en = event_info['category']
-    sub_category_en = event_info['sub_category']
-    event_group_en = event_info['event_group']
+    elements = []
     
     org_style = ParagraphStyle('Org', parent=styles['Title'], alignment=TA_CENTER, fontSize=15, spaceAfter=2)
     event_title_style = ParagraphStyle('EventTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=13, spaceAfter=8, textColor=colors.darkblue)
-    info_style = ParagraphStyle('Info', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10, spaceAfter=4) 
+    info_style = ParagraphStyle('Info', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10, spaceAfter=6) 
     doc_title_style = ParagraphStyle('DocTitle', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, spaceAfter=10)
     event_left_style = ParagraphStyle('EventLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=11, spaceAfter=5)
     
-    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee')
-    elements.append(Paragraph(f"<b>{organizer.upper()}</b>", org_style))
-    elements.append(Paragraph(f"<b>{CONFIG.get('EVENT_TITLE_EN', 'President Running Shield')}</b>", event_title_style))
+    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee').upper()
+    event_name = CONFIG.get('EVENT_TITLE_EN', 'President Running Shield')
     
-    cat_text = f"<b>Category:</b> {category_en} &nbsp; | &nbsp; <b>Sub-Category:</b> {sub_category_en} &nbsp; | &nbsp; <b>Group:</b> {event_group_en}"
-    elements.append(Paragraph(cat_text, info_style))
-    elements.append(Paragraph("<b><u>START LIST / SCORE SHEET</u></b>", doc_title_style))
-    elements.append(Paragraph(f"<b>Event: {evt_name_en.upper()} - ({gender_en})</b>", event_left_style))
+    elements.append(Paragraph(f"<b>{organizer}</b>", org_style))
+    elements.append(Paragraph(f"<b>{event_name}</b>", event_title_style))
+    
+    if 'category' in event_info:
+        cat_text = f"<b>Category:</b> {event_info.get('category','')} &nbsp; | &nbsp; <b>Sub-Category:</b> {event_info.get('sub_category','')} &nbsp; | &nbsp; <b>Group:</b> {event_info.get('event_group','')}"
+        elements.append(Paragraph(cat_text, info_style))
+        
+    elements.append(Paragraph(f"<b><u>{document_title.upper()}</u></b>", doc_title_style))
+    
+    if 'name' in event_info and 'gender' in event_info:
+        elements.append(Paragraph(f"<b>Event: {event_info['name'].upper()} - ({event_info['gender']})</b>", event_left_style))
+        
+    return elements
+
+# ==============================================================
+# 💡 २. साझा फुटर (Common Footer) 
+# ==============================================================
+def add_official_footer(canvas, doc):
+    canvas.saveState()
+    page_width = canvas._pagesize[0] 
+    
+    canvas.setFont('Helvetica-Bold', 10)
+    canvas.drawCentredString(page_width * 0.2, 40, "Recorded By")
+    canvas.drawCentredString(page_width * 0.5, 40, "Starter / Referee")
+    canvas.drawCentredString(page_width * 0.8, 40, "Chief Judge")
+    
+    canvas.setFont('Helvetica', 10)
+    canvas.drawCentredString(page_width * 0.2, 55, "___________________")
+    canvas.drawCentredString(page_width * 0.5, 55, "___________________")
+    canvas.drawCentredString(page_width * 0.8, 55, "___________________")
+    
+    canvas.setFont('Helvetica-Oblique', 8)
+    canvas.setFillColor(colors.dimgrey)
+    current_time = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    footer_text = f"System generated official document | Printed on: {current_time}"
+    canvas.drawCentredString(page_width / 2.0, 15, footer_text)
+    canvas.restoreState()
+
+
+# ==============================================================
+# 🏃 ३. Track & Field (Heat, Relay, Lap)
+# ==============================================================
+def generate_heat_sheet_pdf(event_info, heats_df, CONFIG):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=15, bottomMargin=80)
+    styles = getSampleStyleSheet()
+    
+    # 💡 साझा हेडर बोलाइएको
+    elements = get_official_header(event_info, CONFIG, "START LIST / SCORE SHEET")
     
     name_style = ParagraphStyle('NameStyle', fontSize=10, leading=13)
     header_style = ParagraphStyle('Hdr', fontSize=10, fontName='Helvetica-Bold', alignment=TA_CENTER)
     
     unique_heats = sorted(heats_df['heat'].unique())
     for h in unique_heats:
-        # 💡 १. यो फाइनल हो कि हिट्स हो भनेर चेक गर्ने
         is_final = str(h).upper() == "FINAL"
-        title_text = "FINAL ROUND" if is_final else f"HEAT {h}"
-        elements.append(Paragraph(f"<b>{title_text}</b>", styles['Heading3']))
+        elements.append(Paragraph(f"<b>{'FINAL ROUND' if is_final else f'HEAT {h}'}</b>", styles['Heading3']))
         elements.append(Spacer(1, 5))
         
-        # 💡 २. जादु यहाँ छ: फाइनल हो भने 'Medal', होइन भने 'Q (Y/N)' राख्ने
-        if is_final:
-            headers = [Paragraph('Lane', header_style), Paragraph('Chest', header_style), 
-                       Paragraph('Player Name & Municipality', header_style), 
-                       Paragraph('Time', header_style), Paragraph('Rank', header_style), 
-                       Paragraph('Medal', header_style), Paragraph('Remark', header_style)]
-        else:
-            headers = [Paragraph('Lane', header_style), Paragraph('Chest', header_style), 
-                       Paragraph('Player Name & Municipality', header_style), 
-                       Paragraph('Time', header_style), Paragraph('Rank', header_style), 
-                       Paragraph('Q (Y/N)', header_style), Paragraph('Remark', header_style)]
+        if is_final: headers = [Paragraph('Lane', header_style), Paragraph('Chest', header_style), Paragraph('Player Name & Municipality', header_style), Paragraph('Time', header_style), Paragraph('Rank', header_style), Paragraph('Medal', header_style), Paragraph('Remark', header_style)]
+        else: headers = [Paragraph('Lane', header_style), Paragraph('Chest', header_style), Paragraph('Player Name & Municipality', header_style), Paragraph('Time', header_style), Paragraph('Rank', header_style), Paragraph('Q (Y/N)', header_style), Paragraph('Remark', header_style)]
                        
-        cw = [35, 40, 220, 70, 45, 60, 85] 
-            
         table_data = [headers]
         heat_rows = heats_df[heats_df['heat'] == h].sort_values(by='lane')
         
         for _, row in heat_rows.iterrows():
-            raw_mun = str(row.get('municipality', ''))
-            clean_mun = re.sub(r'[\u0900-\u097F]+', '', raw_mun) 
-            clean_mun = re.sub(r'\(\s*\)', '', clean_mun).strip()
+            clean_mun = re.sub(r'[\u0900-\u097F]+|\(\s*\)', '', str(row.get('municipality', ''))).strip()
             formatted_name = f"<b>{row['name']}</b><br/><font size=8 color='#444444'>({clean_mun})</font>"
             table_data.append([str(row['lane']), '', Paragraph(formatted_name, name_style), '', '', '', ''])
             
-        t = Table(table_data, colWidths=cw)
+        t = Table(table_data, colWidths=[35, 40, 220, 70, 45, 60, 85])
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN', (0,0), (1,-1), 'CENTER'),
-            ('ALIGN', (2,1), (2,-1), 'LEFT'),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (1,-1), 'CENTER'), ('ALIGN', (2,1), (2,-1), 'LEFT'),
+            ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ]))
         elements.append(t)
         elements.append(Spacer(1, 15))
 
-    def add_footer(canvas, doc):
-        canvas.saveState()
-        page_width = A4[0]
-        canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawCentredString(page_width * 0.2, 40, "Recorded By")
-        canvas.drawCentredString(page_width * 0.5, 40, "Starter / Umpire")
-        canvas.drawCentredString(page_width * 0.8, 40, "Chief Judge")
-        canvas.setFont('Helvetica', 10)
-        canvas.drawCentredString(page_width * 0.2, 55, "___________________")
-        canvas.drawCentredString(page_width * 0.5, 55, "___________________")
-        canvas.drawCentredString(page_width * 0.8, 55, "___________________")
-        canvas.setFont('Helvetica-Oblique', 8)
-        canvas.setFillColor(colors.dimgrey)
-        footer_text = f"System generated start list | Printed on: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}"
-        canvas.drawCentredString(page_width / 2.0, 15, footer_text)
-        canvas.restoreState()
+    doc.build(elements, onFirstPage=add_official_footer, onLaterPages=add_official_footer)
+    return buffer.getvalue()
 
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    buffer.seek(0)
-    return buffer
 
 def generate_relay_heat_sheet_pdf(event_info, heats_df, CONFIG):
-    """रिले दौडको हिट्स र फाइनलको लागि विशेष स्टार्ट लिस्ट (खाली कोठा र OK/DNF कोलम सहित)"""
-    from io import BytesIO
-    import re
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from datetime import datetime
-
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=15, bottomMargin=80)
-    elements = []
     styles = getSampleStyleSheet()
     
-    evt_name_en = event_info['name']
-    gender_en = event_info['gender']
-    category_en = event_info['category']
-    sub_category_en = event_info['sub_category']
-    event_group_en = event_info['event_group']
-    
-    # --- हेडर डिजाइन ---
-    org_style = ParagraphStyle('Org', parent=styles['Title'], alignment=TA_CENTER, fontSize=15, spaceAfter=2)
-    event_title_style = ParagraphStyle('EventTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=13, spaceAfter=8, textColor=colors.darkblue)
-    info_style = ParagraphStyle('Info', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10, spaceAfter=4) 
-    doc_title_style = ParagraphStyle('DocTitle', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, spaceAfter=10)
-    event_left_style = ParagraphStyle('EventLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=11, spaceAfter=5)
-    
-    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee')
-    elements.append(Paragraph(f"<b>{organizer.upper()}</b>", org_style))
-    elements.append(Paragraph(f"<b>{CONFIG.get('EVENT_TITLE_EN', 'President Running Shield')}</b>", event_title_style))
-    
-    cat_text = f"<b>Category:</b> {category_en} &nbsp; | &nbsp; <b>Sub-Category:</b> {sub_category_en} &nbsp; | &nbsp; <b>Group:</b> {event_group_en}"
-    elements.append(Paragraph(cat_text, info_style))
-    elements.append(Paragraph("<b><u>RELAY START LIST / SCORE SHEET</u></b>", doc_title_style))
-    elements.append(Paragraph(f"<b>Event: {evt_name_en.upper()} - ({gender_en})</b>", event_left_style))
+    # 💡 साझा हेडर बोलाइएको
+    elements = get_official_header(event_info, CONFIG, "RELAY START LIST / SCORE SHEET")
     
     name_style = ParagraphStyle('NameStyle', fontSize=10, leading=14) 
     header_style = ParagraphStyle('Hdr', fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER)
     
-    # --- हिट्स (Heats) अनुसार लुप चलाउने ---
     unique_heats = sorted(heats_df['heat'].unique())
     for h in unique_heats:
         is_final = str(h).upper() == "FINAL"
-        title_text = "FINAL ROUND" if is_final else f"HEAT {h}"
-        elements.append(Paragraph(f"<b>{title_text}</b>", styles['Heading3']))
+        elements.append(Paragraph(f"<b>{'FINAL ROUND' if is_final else f'HEAT {h}'}</b>", styles['Heading3']))
         elements.append(Spacer(1, 5))
         
-        # 💡 Lane को चौडाइ ३० बाट बढाएर ४० बनाइएको छ ताकि 'Lane' एउटै लाइनमा अटाओस्
-        # 💡 बाहिरी टेबलको जम्मा चौडाइ ५४० पोइन्ट
-        if is_final:
-            headers = [Paragraph('Lane', header_style), Paragraph('Municipality & Squad', header_style), 
-                       Paragraph('Time', header_style), Paragraph('Rank', header_style), 
-                       Paragraph('Medal', header_style), Paragraph('Remark', header_style)]
-            cw = [40, 240, 60, 50, 60, 90] 
-        else:
-            headers = [Paragraph('Lane', header_style), Paragraph('Municipality & Squad', header_style), 
-                       Paragraph('Time', header_style), Paragraph('Rank', header_style), 
-                       Paragraph('Q (Y/N)', header_style), Paragraph('Remark', header_style)]
-            cw = [40, 240, 60, 50, 60, 90]
+        if is_final: headers = [Paragraph('Lane', header_style), Paragraph('Municipality & Squad', header_style), Paragraph('Time', header_style), Paragraph('Rank', header_style), Paragraph('Medal', header_style), Paragraph('Remark', header_style)]
+        else: headers = [Paragraph('Lane', header_style), Paragraph('Municipality & Squad', header_style), Paragraph('Time', header_style), Paragraph('Rank', header_style), Paragraph('Q (Y/N)', header_style), Paragraph('Remark', header_style)]
             
         table_data = [headers]
         heat_rows = heats_df[heats_df['heat'] == h].sort_values(by='lane')
         
         for _, row in heat_rows.iterrows():
-            raw_mun = str(row.get('name', str(row.get('municipality', ''))))
-            clean_mun = re.sub(r'[\u0900-\u097F]+', '', raw_mun) 
-            clean_mun = re.sub(r'\(\s*\)', '', clean_mun).strip().upper()
+            clean_mun = re.sub(r'[\u0900-\u097F]+|\(\s*\)', '', str(row.get('name', row.get('municipality', '')))).strip().upper()
+            players_list = [p.strip() for p in re.split(r'[,|]', str(row.get('players_list', ''))) if p.strip()]
             
-            players_str = str(row.get('players_list', ''))
-            players_list = [p.strip() for p in re.split(r'[,|]', players_str) if p.strip()]
-            
-            # 💡 ग) भित्री चाइल्ड टेबल बनाउने (४ वटा कोलम)
-            inner_data = []
-            inner_data.append([
-                Paragraph("<font size=7 color='#444444'><b>Leg</b></font>", styles['Normal']),
-                Paragraph("<font size=7 color='#444444'><b>Player Name</b></font>", styles['Normal']),
-                Paragraph("<font size=7 color='#444444'><b>OK</b></font>", styles['Normal']),
-                Paragraph("<font size=7 color='#444444'><b>DNF</b></font>", styles['Normal'])
-            ])
-            
+            inner_data = [[Paragraph("<font size=7 color='#444444'><b>Leg</b></font>", styles['Normal']), Paragraph("<font size=7 color='#444444'><b>Player Name</b></font>", styles['Normal']), Paragraph("<font size=7 color='#444444'><b>OK</b></font>", styles['Normal']), Paragraph("<font size=7 color='#444444'><b>DNF</b></font>", styles['Normal'])]]
             for p in players_list:
-                p_name = Paragraph(f"<font size=8>{p}</font>", styles['Normal'])
+                inner_data.append(["", Paragraph(f"<font size=8>{p}</font>", styles['Normal']), Paragraph("<font size=7 color='#333333'>OK</font>", styles['Normal']), Paragraph("<font size=7 color='#333333'>DNF</font>", styles['Normal'])])
                 
-                # 💡 OK र DNF लाई छुट्टाछुट्टै कोठामा Left Align गरेर राखिएको छ
-                # यसले गर्दा दाहिनेपट्टि 'टिक' लगाउने टन्नै खाली ठाउँ बच्छ
-                ok_txt = Paragraph("<font size=7 color='#333333'>OK</font>", styles['Normal'])
-                dnf_txt = Paragraph("<font size=7 color='#333333'>DNF</font>", styles['Normal'])
-                
-                # पहिलो कोठा (Leg) खाली छोडिएको छ, जसले गर्दा एउटा बक्स बन्छ
-                inner_data.append(["", p_name, ok_txt, dnf_txt])
-                
-            # भित्री टेबलको सेटिङ (कुल चौडाइ २४०)
             inner_table = Table(inner_data, colWidths=[25, 135, 40, 40])
-            inner_table.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.25, colors.grey), # मधुरो ग्रिड लाइन
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('ALIGN', (0,0), (0,-1), 'CENTER'), # Leg को हेडरलाई सेन्टर
-                ('ALIGN', (1,0), (3,-1), 'LEFT'),   # Name, OK, DNF सबै Left Align
-                ('TOPPADDING', (0,0), (-1,-1), 3),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-            ]))
+            inner_table.setStyle(TableStyle([('GRID', (0,0), (-1,-1), 0.25, colors.grey), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('ALIGN', (1,0), (3,-1), 'LEFT'), ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3)]))
             
-            cell_content = [
-                Paragraph(f"<b>{clean_mun}</b>", name_style),
-                Spacer(1, 3),
-                inner_table
-            ]
-            
+            cell_content = [Paragraph(f"<b>{clean_mun}</b>", name_style), Spacer(1, 3), inner_table]
             table_data.append([str(row['lane']), cell_content, '', '', '', ''])
             
-        t = Table(table_data, colWidths=cw)
+        t = Table(table_data, colWidths=[40, 240, 60, 50, 60, 90])
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'), 
-            ('ALIGN', (0,0), (0,-1), 'CENTER'), 
-            ('ALIGN', (1,0), (1,-1), 'LEFT'),   
-            ('ALIGN', (2,0), (-1,-1), 'CENTER'),
-            ('TOPPADDING', (0,0), (-1,-1), 6),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (0,-1), 'CENTER'), ('ALIGN', (1,0), (1,-1), 'LEFT'), ('ALIGN', (2,0), (-1,-1), 'CENTER'),
+            ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ]))
         elements.append(t)
         elements.append(Spacer(1, 15))
 
-    # --- फुटर ---
-    def add_footer(canvas, doc):
-        canvas.saveState()
-        page_width = A4[0] 
-        
-        canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawCentredString(page_width * 0.2, 40, "Starter")
-        canvas.drawCentredString(page_width * 0.5, 40, "Track Referee")
-        canvas.drawCentredString(page_width * 0.8, 40, "Chief Timekeeper")
-        
-        canvas.setFont('Helvetica', 10)
-        canvas.drawCentredString(page_width * 0.2, 55, "____________________")
-        canvas.drawCentredString(page_width * 0.5, 55, "____________________")
-        canvas.drawCentredString(page_width * 0.8, 55, "____________________")
-        
-        canvas.setFont('Helvetica-Oblique', 8)
-        canvas.setFillColor(colors.dimgrey)
-        current_time = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        canvas.drawCentredString(page_width / 2.0, 15, f"System generated relay sheet | Printed on: {current_time}")
-        canvas.restoreState()
+    doc.build(elements, onFirstPage=add_official_footer, onLaterPages=add_official_footer)
+    return buffer.getvalue()
 
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
 
-from io import BytesIO
-import re
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import landscape, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from datetime import datetime
+# ==============================================================
+# 🏐 ६. Team Games (Volleyball, Kabaddi) Lineup Slip
+# ==============================================================
+def generate_lineup_sheet_pdf(event_info, CONFIG):
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib import colors
 
-def generate_lap_sheet_pdf(event_info, participants_df, CONFIG):
-    """लामो दूरीको दौडको लागि प्रोफेसनल ल्याप सिट जेनेरेटर"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=15, bottomMargin=80)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=15, bottomMargin=15)
     elements = []
     styles = getSampleStyleSheet()
 
-    evt_name_en = event_info.get('name', '')
-    gender_en = event_info.get('gender', '')
-    category_en = event_info.get('category', '')
-    sub_category_en = event_info.get('sub_category', '') 
-    event_group_en = event_info.get('event_group', '')
+    for i in range(2):
+        # 💡 साझा हेडर बोलाइएको
+        elements.extend(get_official_header(event_info, CONFIG, "OFFICIAL TEAM LINE-UP SHEET"))
+        elements.append(Spacer(1, 10))
 
-    org_style = ParagraphStyle('Org', parent=styles['Title'], alignment=TA_CENTER, fontSize=15, spaceAfter=2)
-    event_title_style = ParagraphStyle('EventTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=13, spaceAfter=8, textColor=colors.darkblue)
-    info_style = ParagraphStyle('Info', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10, spaceAfter=4)
-    lap_sheet_title_style = ParagraphStyle('LapTitle', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12, spaceAfter=10)
-    event_left_style = ParagraphStyle('EventLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=11, spaceAfter=5)
+        info_data = [
+            [Paragraph("<b>Team Name:</b> _______________________", styles['Normal']), Paragraph("<b>Match No:</b> ______", styles['Normal']), Paragraph("<b>Date:</b> ____________", styles['Normal'])],
+            [Paragraph("<b>Opponent:</b> _______________________", styles['Normal']), Paragraph("<b>Set No:</b> ______", styles['Normal']), Paragraph("<b>Time:</b> ____________", styles['Normal'])]
+        ]
+        t_info = Table(info_data, colWidths=[220, 120, 150])
+        t_info.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'LEFT'), ('BOTTOMPADDING', (0,0), (-1,-1), 8)]))
+        elements.append(t_info)
+        elements.append(Spacer(1, 5))
 
-    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee, Ilam')
-    elements.append(Paragraph(f"<b>{organizer.upper()}</b>", org_style))
-    elements.append(Paragraph(f"<b>{CONFIG.get('EVENT_TITLE_EN', 'PRESIDENT RUNNING SHIELD')}</b>", event_title_style))
-
-    cat_text = f"<b>Category:</b> {category_en} &nbsp; | &nbsp; <b>Sub Category:</b> {sub_category_en} &nbsp; | &nbsp; <b>Group:</b> {event_group_en}"
-    elements.append(Paragraph(cat_text, info_style))
-    elements.append(Paragraph("<b><u>OFFICIAL LAP SHEET</u></b>", lap_sheet_title_style))
-    elements.append(Paragraph(f"<b>Event: {evt_name_en.upper()} - ({gender_en})</b>", event_left_style))
-    elements.append(Spacer(1, 5))
-
-    total_laps = 15 if "3000" in evt_name_en else 7 if "1500" in evt_name_en else 4 if "800" in evt_name_en else 1
-    header_style = ParagraphStyle('Hdr', fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER)
-    name_style = ParagraphStyle('NameStyle', fontSize=10, leading=13)
-
-    headers = [Paragraph('SN', header_style), Paragraph('Chest', header_style), Paragraph('Player Name & Municipality', header_style)]
-    for i in range(total_laps, 0, -1): 
-        headers.append(Paragraph(f'L{i}', header_style))
-    headers.append(Paragraph('Time/Finish', header_style))
-
-    table_data = [headers]
-    for idx, row in participants_df.iterrows():
-        raw_mun = str(row.get('municipality', row.get('school', '')))
-        clean_mun = re.sub(r'[\u0900-\u097F]+', '', raw_mun) 
-        clean_mun = re.sub(r'\(\s*\)', '', clean_mun).strip()
-        formatted_name = f"<b>{row['name']}</b><br/><font size=8 color='#444444'>({clean_mun})</font>"
+        header_style = ParagraphStyle('Hdr', fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER)
+        headers = [Paragraph('SN', header_style), Paragraph('Jersey No.', header_style), Paragraph('Player Name', header_style), Paragraph('Role (C/L)', header_style), Paragraph('Starting Pos. / Sub', header_style)]
         
-        row_data = [str(idx + 1), '', Paragraph(formatted_name, name_style)] + [''] * total_laps + ['']
-        table_data.append(row_data)
+        table_data = [headers]
+        for j in range(1, 13):
+            table_data.append([str(j), '', '', '', ''])
+            
+        t_players = Table(table_data, colWidths=[30, 60, 210, 70, 140])
+        t_players.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('ALIGN', (2,1), (2,-1), 'LEFT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ]))
+        elements.append(t_players)
+        elements.append(Spacer(1, 15))
 
-    lap_width = 450 / max(1, total_laps)
-    col_widths = [30, 40, 220] + [lap_width] * total_laps + [60]
+        sig_data = [["______________________", "______________________"], ["Coach Signature", "Captain Signature"]]
+        t_sig = Table(sig_data, colWidths=[250, 250])
+        t_sig.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONT', (0,0), (-1,-1), 'Helvetica'), ('TOPPADDING', (0,0), (-1,-1), 5)]))
+        elements.append(t_sig)
+        
+        if i == 0:
+            elements.append(Spacer(1, 15))
+            elements.append(Paragraph("- - - - - - - - - - - - - - - - - - - - - - - - - - - - ✂️ - - - - - - - - - - - - - - - - - - - - - - - - - - -", ParagraphStyle('Cut', alignment=TA_CENTER, textColor=colors.grey)))
+            elements.append(Spacer(1, 15))
 
-    t = Table(table_data, colWidths=col_widths, repeatRows=1)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN', (0,0), (1,-1), 'CENTER'), 
-        ('ALIGN', (2,0), (2,-1), 'LEFT'),  
-        ('ALIGN', (3,0), (-1,-1), 'CENTER'),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    doc.build(elements)
+    return buffer.getvalue()
+
+def generate_prefilled_lineup_pdf(event_info, match_info, t1_players, t2_players, CONFIG):
+    """A4 तेर्सो (Landscape) मा खेल अनुसार (Volleyball/Kabaddi) प्रि-फिल्ड लाइनअप सिट"""
+    from io import BytesIO
+    import re
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib import colors
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=15, leftMargin=15, topMargin=20, bottomMargin=20)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    sub_cat = event_info.get('sub_category', 'Volleyball') # खेल कुन हो भनेर चिन्ने
+
+    def clean_nepali(text):
+        """नेपाली अक्षर र खाली कोष्ठक हटाउने फङ्सन"""
+        if not text: return ""
+        cleaned = re.sub(r'[\u0900-\u097F]+', '', text) # नेपाली अक्षर हटाउने
+        cleaned = re.sub(r'\(\s*\)', '', cleaned).strip() # खाली कोष्ठक () हटाउने
+        return cleaned
+
+    def create_team_slip(team_raw, opp_raw, players):
+        slip_elements = []
+        team_name = clean_nepali(team_raw)
+        opp_name = clean_nepali(opp_raw)
+
+        # 💡 हेडर (Sheet थपिएको)
+        slip_elements.append(Paragraph(f"<b>{CONFIG.get('EVENT_TITLE_EN', 'President Running Shield')}</b>", ParagraphStyle('T', alignment=TA_CENTER, fontSize=12, textColor=colors.darkblue)))
+        slip_elements.append(Paragraph(f"<b>{event_info['name']} ({event_info['gender']}) - Official Line-up Sheet</b>", ParagraphStyle('S', alignment=TA_CENTER, fontSize=10)))
+        slip_elements.append(Spacer(1, 10))
+
+        # 💡 म्याच र समयको जानकारी (खेल अनुसार Set वा Half)
+        period_label = "Half:" if sub_cat == "Kabaddi" else "Set No:"
+        i_style = ParagraphStyle('I', fontSize=9)
+        info_t = Table([
+            [Paragraph(f"<b>Team:</b> <font color='blue'>{team_name}</font>", i_style), Paragraph(f"<b>Match No:</b> #{match_info['id']}", i_style)],
+            [Paragraph(f"<b>Opponent:</b> <font color='red'>{opp_name}</font>", i_style), Paragraph(f"<b>{period_label}</b> _________", i_style)]
+        ], colWidths=[200, 110])
+        info_t.setStyle(TableStyle([('BOTTOMPADDING', (0,0), (-1,-1), 8)]))
+        slip_elements.append(info_t)
+
+        # 💡 खेल अनुसार टेबलको हेडर र गाइड (Legend)
+        h_style = ParagraphStyle('H', fontSize=8, fontName='Helvetica-Bold', alignment=TA_CENTER)
+        
+        if sub_cat == "Kabaddi":
+            # 💡 फिक्स: कबड्डीको अफिसियल नियम अनुसार Start 7 र Bench राखियो
+            headers = [Paragraph('SN', h_style), Paragraph('Jersey', h_style), Paragraph('Player Name', h_style), Paragraph('Role (C)', h_style), Paragraph('Start 7 / Bench', h_style)]
+            legend_text = "* Note: C = Captain, Start 7 = Starting Seven Players, Bench = Substitutes"
+        else: # Default Volleyball
+            headers = [Paragraph('SN', h_style), Paragraph('Jersey', h_style), Paragraph('Player Name', h_style), Paragraph('Role (C/L)', h_style), Paragraph('Pos (I-VI)', h_style)]
+            legend_text = "* Note: C = Captain, L = Libero, Pos = Starting Position (I to VI)"
+
+        n_style = ParagraphStyle('N', fontSize=8)
+        table_data = [headers]
+
+        for i in range(12):
+            sn = str(i+1)
+            j_no, p_name = "", ""
+            if i < len(players):
+                j_no = str(players[i].get('jersey_no') or '')
+                p_name = clean_nepali(str(players[i].get('player_name') or '')) # नेपाली नाम काट्ने
+            table_data.append([sn, j_no, Paragraph(f"<b>{p_name}</b>", n_style), '', ''])
+
+        t_players = Table(table_data, colWidths=[25, 40, 150, 60, 60])
+        t_players.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+            ('ALIGN', (0,0), (1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ]))
+        slip_elements.append(t_players)
+        
+        # 💡 टेबलको पुछारमा गाइड (Legend)
+        slip_elements.append(Spacer(1, 2))
+        slip_elements.append(Paragraph(legend_text, ParagraphStyle('L', fontSize=7, textColor=colors.dimgrey)))
+        slip_elements.append(Spacer(1, 10))
+
+        # हस्ताक्षर
+        sig_t = Table([["__________________", "__________________"], ["Coach Sign", "Captain Sign"]], colWidths=[150, 150])
+        sig_t.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTSIZE', (0,0), (-1,-1), 8)]))
+        slip_elements.append(sig_t)
+
+        return slip_elements
+
+    slip_A = create_team_slip(match_info['p1'], match_info['p2'], t1_players)
+    slip_B = create_team_slip(match_info['p2'], match_info['p1'], t2_players)
+
+    # दुईवटा स्लिपलाई एउटै ठूलो टेबलमा दायाँ-बायाँ (Side-by-Side) राख्ने
+    master_table = Table([[slip_A, slip_B]], colWidths=[395, 395])
+    master_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('INNERGRID', (0,0), (-1,-1), 1, colors.grey) # बीचको काट्ने लाइन (Cut Line)
     ]))
-    elements.append(t)
+    elements.append(master_table)
 
-    def add_footer(canvas, doc):
-        canvas.saveState()
-        page_width = landscape(A4)[0]
-        canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawCentredString(page_width * 0.2, 40, "Lap Scorer")
-        canvas.drawCentredString(page_width * 0.5, 40, "Umpire / Judge")
-        canvas.drawCentredString(page_width * 0.8, 40, "Chief Referee")
-        canvas.setFont('Helvetica', 10)
-        canvas.drawCentredString(page_width * 0.2, 55, "_________________________")
-        canvas.drawCentredString(page_width * 0.5, 55, "_________________________")
-        canvas.drawCentredString(page_width * 0.8, 55, "_________________________")
-        canvas.setFont('Helvetica-Oblique', 8)
-        canvas.setFillColor(colors.dimgrey)
-        current_time = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        canvas.drawCentredString(page_width / 2.0, 15, f"System generated lap sheet | Printed on: {current_time}")
-        canvas.restoreState()
+    doc.build(elements)
+    return buffer.getvalue()
 
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    
-    # 💡 जादु यहाँ छ: यसले Streamlit लाई चाहिने 'Bytes' फर्काउँछ
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
-
-
+# ==============================================================
+# 🎯 ४. Field Events (Shot Put, Long Jump, High Jump)
+# ==============================================================
 def generate_field_scoresheet_pdf(event_info, participants_df, CONFIG):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=15, bottomMargin=80)
-    elements = []
-    styles = getSampleStyleSheet()
     
-    evt_name_en = event_info['name']
-    gender_en = event_info['gender']
-    category_en = event_info['category']
-    sub_category_en = event_info['sub_category']
-    event_group_en = event_info['event_group']
-    
-    org_style = ParagraphStyle('Org', parent=styles['Title'], alignment=TA_CENTER, fontSize=15, spaceAfter=2)
-    event_title_style = ParagraphStyle('EventTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=13, spaceAfter=8, textColor=colors.darkblue)
-    info_style = ParagraphStyle('Info', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10, spaceAfter=10)
-    event_left_style = ParagraphStyle('EventLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=11, spaceAfter=5)
-    
-    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee, Ilam')
-    elements.append(Paragraph(f"<b>{organizer.upper()}</b>", org_style))
-    elements.append(Paragraph(f"<b>{CONFIG['EVENT_TITLE_EN']}</b>", event_title_style))
-    
-    info_text = f"<b>SCORE SHEET</b> &nbsp; | &nbsp; <b>Category:</b> {category_en} &nbsp; | &nbsp; <b>Sub-Category:</b> {sub_category_en} &nbsp; | &nbsp; <b>Group:</b> {event_group_en}"
-    elements.append(Paragraph(info_text, info_style))
-    elements.append(Paragraph(f"<b>Event: {evt_name_en.upper()} - ({gender_en})</b>", event_left_style))
+    # 💡 साझा हेडर बोलाइएको
+    elements = get_official_header(event_info, CONFIG, "OFFICIAL SCORE SHEET")
     
     headers = ['SN', 'Chest', 'Player Name & Municipality', 'Attempt 1', 'Attempt 2', 'Attempt 3', 'Best\nResult', 'Pos', 'Remark']
     data = [headers]
     name_style = ParagraphStyle('NameStyle', fontSize=10, leading=13)
     
     for i, row in participants_df.iterrows():
-        raw_mun = str(row.get('municipality', ''))
-        clean_mun = re.sub(r'[\u0900-\u097F]+', '', raw_mun) 
-        clean_mun = re.sub(r'\(\s*\)', '', clean_mun).strip()
+        clean_mun = re.sub(r'[\u0900-\u097F]+|\(\s*\)', '', str(row.get('municipality', ''))).strip()
         formatted_name = f"<b>{row['name']}</b><br/><font size=8 color='#444444'>({clean_mun})</font>"
         data.append([str(i+1), '', Paragraph(formatted_name, name_style), '', '', '', '', '', ''])
-        
-    for _ in range(3): 
-        data.append([''] * 9)
+        for _ in range(3): data.append([''] * 9)
 
-    cw = [30, 40, 240, 85, 85, 85, 75, 40, 122]
-    t = Table(data, colWidths=cw)
+    t = Table(data, colWidths=[30, 40, 240, 85, 85, 85, 75, 40, 122])
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), 
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), 
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'), 
-        ('ALIGN', (2,1), (2,-1), 'LEFT'), 
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('ALIGN', (2,1), (2,-1), 'LEFT'), 
     ]))
     elements.append(t)
     
-    def add_footer(canvas, doc):
-        canvas.saveState()
-        page_width = landscape(A4)[0]
-        canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawCentredString(page_width * 0.2, 40, "Recorded By")
-        canvas.drawCentredString(page_width * 0.5, 40, "Head Referee")
-        canvas.drawCentredString(page_width * 0.8, 40, "Chief Judge")
-        canvas.setFont('Helvetica', 10)
-        canvas.drawCentredString(page_width * 0.2, 55, "_________________________")
-        canvas.drawCentredString(page_width * 0.5, 55, "_________________________")
-        canvas.drawCentredString(page_width * 0.8, 55, "_________________________")
-        canvas.setFont('Helvetica-Oblique', 8)
-        canvas.setFillColor(colors.dimgrey)
-        current_time = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        canvas.drawCentredString(page_width / 2.0, 15, f"System generated score sheet | Printed on: {current_time}")
-        canvas.restoreState()
-
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    
-    # 💡 जादु यहाँ छ
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
+    doc.build(elements, onFirstPage=add_official_footer, onLaterPages=add_official_footer)
+    return buffer.getvalue()
 
 
 def generate_high_jump_scoresheet_pdf(event_info, participants_df, CONFIG):
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=15, bottomMargin=80)
-    elements = []
-    styles = getSampleStyleSheet()
     
-    evt_name_en = event_info['name']
-    gender_en = event_info['gender']
-    category_en = event_info['category']
-    sub_category_en = event_info['sub_category']
-    event_group_en = event_info['event_group']
-    
-    org_style = ParagraphStyle('Org', parent=styles['Title'], alignment=TA_CENTER, fontSize=15, spaceAfter=2)
-    event_title_style = ParagraphStyle('EventTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=13, spaceAfter=8, textColor=colors.darkblue)
-    info_style = ParagraphStyle('Info', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10, spaceAfter=10)
-    event_left_style = ParagraphStyle('EventLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=11, spaceAfter=5)
-    
-    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee, Ilam')
-    elements.append(Paragraph(f"<b>{organizer.upper()}</b>", org_style))
-    elements.append(Paragraph(f"<b>{CONFIG['EVENT_TITLE_EN']}</b>", event_title_style))
-    
-    info_text = f"<b>SCORE SHEET</b> &nbsp; | &nbsp; <b>Category:</b> {category_en} &nbsp; | &nbsp; <b>Sub-Category:</b> {sub_category_en} &nbsp; | &nbsp; <b>Group:</b> {event_group_en}"
-    elements.append(Paragraph(info_text, info_style))
-    elements.append(Paragraph(f"<b>Event: {evt_name_en.upper()} - ({gender_en})</b>", event_left_style))
+    # 💡 साझा हेडर बोलाइएको
+    elements = get_official_header(event_info, CONFIG, "OFFICIAL HIGH JUMP SCORE SHEET")
     
     header_row1 = ['SN', 'Chest', 'Player Name & Municipality'] + ['Height 1', 'Height 2', 'Height 3', 'Height 4', 'Height 5', 'Height 6', 'Height 7', 'Height 8'] + ['Best\nResult', 'Total\nFails', 'Pos', 'Remark']
     header_row2 = ['', '', ''] + ['........'] * 8 + ['', '', '', '']
@@ -465,17 +365,12 @@ def generate_high_jump_scoresheet_pdf(event_info, participants_df, CONFIG):
     name_style = ParagraphStyle('NameStyle', fontSize=10, leading=13)
     
     for i, row in participants_df.iterrows():
-        raw_mun = str(row.get('municipality', ''))
-        clean_mun = re.sub(r'[\u0900-\u097F]+', '', raw_mun) 
-        clean_mun = re.sub(r'\(\s*\)', '', clean_mun).strip()
+        clean_mun = re.sub(r'[\u0900-\u097F]+|\(\s*\)', '', str(row.get('municipality', ''))).strip()
         formatted_name = f"<b>{row['name']}</b><br/><font size=8 color='#444444'>({clean_mun})</font>"
         data.append([str(i+1), '', Paragraph(formatted_name, name_style)] + [''] * 8 + ['', '', '', ''])
-        
-    for _ in range(2): 
-        data.append([''] * 15)
+        for _ in range(2): data.append([''] * 15)
 
-    cw = [25, 35, 200] + [42] * 8 + [45, 45, 30, 50]
-    t = Table(data, colWidths=cw)
+    t = Table(data, colWidths=[25, 35, 200] + [42] * 8 + [45, 45, 30, 50])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,1), colors.lightgrey), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('ALIGN', (2,2), (2,-1), 'LEFT'), 
@@ -484,48 +379,20 @@ def generate_high_jump_scoresheet_pdf(event_info, participants_df, CONFIG):
     ]))
     elements.append(t)
     
-    def add_footer(canvas, doc):
-        canvas.saveState()
-        page_width = landscape(A4)[0]
-        canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawCentredString(page_width * 0.2, 40, "Recorded By")
-        canvas.drawCentredString(page_width * 0.5, 40, "Head Referee")
-        canvas.drawCentredString(page_width * 0.8, 40, "Chief Judge")
-        canvas.setFont('Helvetica', 10)
-        canvas.drawCentredString(page_width * 0.2, 55, "_________________________")
-        canvas.drawCentredString(page_width * 0.5, 55, "_________________________")
-        canvas.drawCentredString(page_width * 0.8, 55, "_________________________")
-        canvas.setFont('Helvetica-Oblique', 8)
-        canvas.setFillColor(colors.dimgrey)
-        current_time = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        canvas.drawCentredString(page_width / 2.0, 15, f"System generated score sheet | Printed on: {current_time}")
-        canvas.restoreState()
+    doc.build(elements, onFirstPage=add_official_footer, onLaterPages=add_official_footer)
+    return buffer.getvalue()
 
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    
-    # 💡 जादु यहाँ छ
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
 
-# ==========================================
-# 🥋 Martial Arts PDF Generators (NEW)
-# ==========================================
+# ==============================================================
+# 🥋 ५. Martial Arts (Kata, Poomsae, Taolu)
+# ==============================================================
 def generate_judge_score_sheet(event_name, round_name, bouts, event_type, CONFIG):
-    """मार्सल आर्ट्स (Kata, Poomsae, Taolu) को लागि डाइनामिक जज स्कोर सिट"""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=60)
-    elements = []
     styles = getSampleStyleSheet()
     
-    org_style = ParagraphStyle('Org', parent=styles['Title'], alignment=TA_CENTER, fontSize=15, spaceAfter=2)
-    event_title_style = ParagraphStyle('EventTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=13, spaceAfter=8, textColor=colors.darkblue)
-    
-    organizer = CONFIG.get('ORGANIZER_NAME_EN', 'District Sports Development Committee')
-    elements.append(Paragraph(f"<b>{organizer.upper()}</b>", org_style))
-    elements.append(Paragraph(f"<b>{CONFIG.get('EVENT_TITLE_EN', 'President Running Shield')}</b>", event_title_style))
-    elements.append(Paragraph(f"<b>OFFICIAL JUDGE SCORE/VOTING SHEET</b>", styles['Heading3']))
-    elements.append(Paragraph(f"<b>Event:</b> {event_name} &nbsp;&nbsp; | &nbsp;&nbsp; <b>Round:</b> {round_name}", styles['Normal']))
+    # 💡 साझा हेडर बोलाइएको (यसमा event_info को सट्टा सिधै नाम पठाइएको छ)
+    elements = get_official_header({'name': event_name, 'gender': 'Round: ' + round_name}, CONFIG, "OFFICIAL JUDGE SCORE/VOTING SHEET")
     elements.append(Spacer(1, 10))
     
     def get_clean_name(p_str):
@@ -533,14 +400,13 @@ def generate_judge_score_sheet(event_name, round_name, bouts, event_type, CONFIG
         m = re.search(r"^(.*?)\s*\((.*?)\)", p_str)
         return f"<b>{m.group(1)}</b>\n<font size=8>({m.group(2)})</font>" if m else p_str.split(" [ID:")[0]
 
-    # विधा अनुसार कोलमहरू (Dynamic Headers)
     if "Kata" in event_type:
         headers = ['Bout', 'Color', 'Player & Municipality', 'Tech\n(70%)', 'Athl\n(30%)', 'J1', 'J2', 'J3', 'J4', 'J5', 'Final Vote']
         col_widths = [40, 50, 180, 50, 50, 40, 40, 40, 40, 40, 70]
     elif "Poomsae" in event_type:
         headers = ['Bout', 'Color', 'Player & Municipality', 'Acc\n(4.0)', 'Pres\n(6.0)', 'J1', 'J2', 'J3', 'J4', 'J5', 'Total']
         col_widths = [40, 50, 180, 50, 50, 40, 40, 40, 40, 40, 70]
-    else: # Taolu
+    else: 
         headers = ['Bout', 'Color', 'Player & Municipality', 'Tech\n(5.0)', 'Pres\n(5.0)', 'Ded\n(-)', 'J1', 'J2', 'J3', 'Total']
         col_widths = [40, 50, 190, 50, 50, 50, 45, 45, 45, 60]
 
@@ -552,166 +418,19 @@ def generate_judge_score_sheet(event_name, round_name, bouts, event_type, CONFIG
         p2_name = Paragraph(get_clean_name(b['p2']), styles['Normal'])
         
         c1 = "AKA(Red)" if "Kata" in event_type else "Chung(Blue)" if "Poomsae" in event_type else "Black"
-        row1 = [str(b['id']), c1, p1_name] + [''] * (len(headers) - 3)
-        
         c2 = "AO(Blue)" if "Kata" in event_type else "Hong(Red)" if "Poomsae" in event_type else "Red"
-        row2 = ['', c2, p2_name] + [''] * (len(headers) - 3)
         
-        data.extend([row1, row2])
+        data.extend([[str(b['id']), c1, p1_name] + [''] * (len(headers) - 3), ['', c2, p2_name] + [''] * (len(headers) - 3)])
         
     t = Table(data, colWidths=col_widths)
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('FONTSIZE', (0,0), (-1,-1), 9), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6), ('TOPPADDING', (0,0), (-1,-1), 6),
     ]))
     elements.append(t)
 
-    def add_footer(canvas, doc):
-        canvas.saveState()
-        page_width = landscape(A4)[0]
-        canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawCentredString(page_width * 0.2, 40, "Recorded By")
-        canvas.drawCentredString(page_width * 0.8, 40, "Chief Judge")
-        canvas.setFont('Helvetica', 10)
-        canvas.drawCentredString(page_width * 0.2, 55, "___________________")
-        canvas.drawCentredString(page_width * 0.8, 55, "___________________")
-        canvas.restoreState()
-
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    buffer.seek(0)
-    return buffer
-
-# vollyball team slip
-def generate_lineup_sheet_pdf(event_name):
-    """भलिबल/टीम गेमको लागि अफिसियल लाइन-अप स्लिप (खाली फारम) जेनेरेट गर्ने"""
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
-    elements = []
-    styles = getSampleStyleSheet()
-
-    # एउटा A4 पानामा २ वटा स्लिप (Top र Bottom) अटाउने गरी लुप
-    for i in range(2):
-        # Header
-        elements.append(Paragraph(f"<b>{event_name} - Official Line-up Sheet</b>", styles['Heading3']))
-        elements.append(Spacer(1, 15))
-
-        # Team & Match Info
-        info_data = [
-            ["Team Name:", "___________________________", "Match No:", "_______"],
-            ["Opponent:", "___________________________", "Set No:", "_______"]
-        ]
-        t_info = Table(info_data, colWidths=[80, 200, 60, 100])
-        t_info.setStyle(TableStyle([('FONT', (0,0), (-1,-1), 'Helvetica'), ('ALIGN', (0,0), (-1,-1), 'LEFT')]))
-        elements.append(t_info)
-        elements.append(Spacer(1, 20))
-
-        # Starting 6 Positions Table
-        start_data = [
-            ["Starting Order", "I (1)", "II (2)", "III (3)", "IV (4)", "V (5)", "VI (6)"],
-            ["Jersey No.", "", "", "", "", "", ""]
-        ]
-        t_start = Table(start_data, colWidths=[95, 50, 50, 50, 50, 50, 50])
-        t_start.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 15),
-            ('TOPPADDING', (0,0), (-1,-1), 15)
-        ]))
-        elements.append(t_start)
-        elements.append(Spacer(1, 20))
-
-        # Libero & Captain
-        lib_cap_data = [
-            ["Libero (Jersey No):", "___________, ___________", "Team Captain (No):", "___________"]
-        ]
-        t_lc = Table(lib_cap_data, colWidths=[120, 150, 120, 100])
-        t_lc.setStyle(TableStyle([('FONT', (0,0), (-1,-1), 'Helvetica-Bold')]))
-        elements.append(t_lc)
-        elements.append(Spacer(1, 40))
-
-        # Signatures
-        sig_data = [
-            ["______________________", "______________________"],
-            ["Coach Signature", "Captain Signature"]
-        ]
-        t_sig = Table(sig_data, colWidths=[250, 250])
-        t_sig.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONT', (0,0), (-1,-1), 'Helvetica')]))
-        elements.append(t_sig)
-        
-        # पानाको बिचमा काट्ने धर्सो
-        if i == 0:
-            elements.append(Spacer(1, 50))
-            elements.append(Paragraph("- - - - - - - - - - - - - - - - - - - - - - - - - -✂️ - - - - - - - - - - - - - - - - - - - - - - - - -", styles['Normal']))
-            elements.append(Spacer(1, 50))
-
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
-
-
-
-
-# ==========================================
-# 🎯 FIELD EVENTS (Shot Put, Long Jump, Javelin) Score Sheet
-# ==========================================
-def generate_field_scoresheet_pdf(current_event, p_df, config):
-    buffer = io.BytesIO()
-    # फिल्ड गेमको लागि A4 तेर्सो (Landscape) पाना ठीक हुन्छ
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    elements = []
-    styles = getSampleStyleSheet()
-    
-    # हेडरको डिजाइन
-    title_style = ParagraphStyle(name='TitleStyle', parent=styles['Heading1'], alignment=1, fontSize=16)
-    sub_title_style = ParagraphStyle(name='SubTitleStyle', parent=styles['Heading2'], alignment=1, fontSize=12, textColor=colors.maroon)
-    
-    event_name = current_event.get('name', 'Field Event')
-    gender = current_event.get('gender', '')
-    
-    elements.append(Paragraph(f"{config.get('EVENT_TITLE_NP', 'President Running Shield')}", title_style))
-    elements.append(Spacer(1, 5))
-    elements.append(Paragraph(f"Official Field Score Sheet - {event_name} ({gender})", sub_title_style))
-    elements.append(Spacer(1, 15))
-    
-    # टेबलको हेडर (Columns)
-    data = [['SN', 'Player ID', 'Player Name', 'Municipality', 'Attempt 1', 'Attempt 2', 'Attempt 3', 'Best Score', 'Rank']]
-    
-    # खेलाडीहरूको डाटा भर्ने (अटेम्प्टहरू खाली राख्ने ताकि हातले लेख्न मिलोस्)
-    for idx, row in p_df.iterrows():
-        data.append([
-            str(idx + 1),
-            str(row.get('id', '')),
-            str(row.get('name', '')),
-            str(row.get('municipality', '')),
-            '', '', '', '', ''
-        ])
-        
-    # टेबलको डिजाइन र साइज मिलाउने
-    t = Table(data, colWidths=[30, 60, 160, 160, 80, 80, 80, 80, 50])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 12),
-        ('GRID', (0,0), (-1,-1), 1, colors.black),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        # नाम र पालिकालाई बायाँ फर्काउने
-        ('ALIGN', (2,1), (3,-1), 'LEFT'),
-    ]))
-    
-    elements.append(t)
-    doc.build(elements)
-    
-    buffer.seek(0)
+    doc.build(elements, onFirstPage=add_official_footer, onLaterPages=add_official_footer)
     return buffer.getvalue()
+
 

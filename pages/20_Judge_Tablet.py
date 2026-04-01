@@ -64,7 +64,7 @@ if not st.session_state.judge_logged_in:
         j_name = st.selectbox("आफ्नो नाम छान्नुहोस्", list(JUDGE_PINS.keys()), index=None, placeholder="Choose Judge Number")
         pin_in = st.text_input("PIN कोड प्रविष्ट गर्नुहोस्", type="password", max_chars=4)
         
-        if st.button("✅ प्रणालीमा प्रवेश गर्नुहोस्", type="primary", use_container_width=True):
+        if st.button("✅ प्रणालीमा प्रवेश गर्नुहोस्", type="primary", width="stretch"):
             if j_name and JUDGE_PINS.get(j_name) == pin_in:
                 st.session_state.judge_logged_in = True
                 st.session_state.judge_name = j_name
@@ -101,7 +101,7 @@ if needs_refresh:
 if not live_data:
     st.markdown(f"<div class='master-header'><div class='event-title'>🏆 {CONFIG.get('EVENT_TITLE_NP', 'Tournament')}</div></div>", unsafe_allow_html=True)
     st.markdown("<div style='text-align:center; padding:80px 20px; background:rgba(255,255,255,0.02); border:2px dashed #334155; border-radius:20px;'><h2 style='color:#94a3b8;'>⏳ नयाँ बाउटको प्रतीक्षा गर्दै...</h2><p style='color:#64748b;'>मञ्चबाट अपरेटरले भोटिङ नखुलाएसम्म यो स्क्रिन आफैँ रिफ्रेस भइरहनेछ।</p></div>", unsafe_allow_html=True)
-    if st.button("🚪 लगआउट", use_container_width=True):
+    if st.button("🚪 लगआउट", width="stretch"):
         st.session_state.judge_logged_in = False; st.rerun()
     st.stop()
 
@@ -132,14 +132,14 @@ if not live_data['voting_open']:
 elif my_vote:
     st.markdown(f"<div class='vote-success'>✅ तपाईंको भोट (<b>{my_vote}</b>) सुरक्षित भयो।</div>", unsafe_allow_html=True)
     st.caption("<p style='text-align:center; margin-top:10px;'>अब स्क्रिनमा अन्तिम नतिजाको प्रतीक्षा गर्नुहोस्...</p>", unsafe_allow_html=True)
-    if st.button("🔄 अर्को म्याचको लागि तयार हुनुहोस्", use_container_width=True):
+    if st.button("🔄 अर्को म्याचको लागि तयार हुनुहोस्", width="stretch"):
         st.session_state.hidden_bout = live_data['bout_id']; st.rerun()
 else:
     # 🔴 ठूला भोटिङ बटनहरू
     st.markdown("<h3 style='text-align:center;'>आफ्नो निर्णय दिनुहोस्:</h3>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("🔴\nAKA", key="btn_aka", use_container_width=True):
+        if st.button("🔴\nAKA", key="btn_aka", width="stretch"):
             conn = db.get_connection()
             c = conn.cursor()
             # 💡 PostgreSQL: %s र bout_id अनिवार्य प्रयोग गरिएको
@@ -147,7 +147,7 @@ else:
             conn.commit(); c.close(); conn.close()
             st.rerun()
     with c2:
-        if st.button("🔵\nAO", key="btn_ao", use_container_width=True):
+        if st.button("🔵\nAO", key="btn_ao", width="stretch"):
             conn = db.get_connection()
             c = conn.cursor()
             c.execute(f"UPDATE live_match SET {my_col} = %s WHERE bout_id = %s", ('AO', live_data['bout_id']))
@@ -155,7 +155,7 @@ else:
             st.rerun()
 
 st.write("---")
-if st.button("🚪 लगआउट (Exit Panel)", use_container_width=True, kind="secondary"):
+if st.button("🚪 लगआउट (Exit Panel)", width="stretch", kind="secondary"):
     st.session_state.judge_logged_in = False
     st.session_state.judge_name = None
     st.session_state.hidden_bout = None

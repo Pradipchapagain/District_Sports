@@ -3,7 +3,8 @@ import streamlit as st
 import pandas as pd
 import database as db  # 💡 यो अब PostgreSQL सँग जोडिएको database.py हुनुपर्छ
 import os
-from datetime import date
+from datetime import date, time
+
 
 from config import render_header, render_footer, CONFIG
 from io import BytesIO
@@ -124,7 +125,7 @@ with tab_off:
     with col_t:
         off_df = db.get_officials(sel_mun_id)
         if not off_df.empty:
-            st.dataframe(off_df[['role', 'name', 'phone']], hide_index=True, use_container_width=True)
+            st.dataframe(off_df[['role', 'name', 'phone']], hide_index=True, width="stretch")
             del_id = st.selectbox("हटाउनुपर्ने अफिसियल छान्नुहोस्:", off_df['id'], format_func=lambda x: off_df[off_df['id']==x]['name'].iloc[0])
             if st.button("🗑️ हटाउनुहोस् (Delete)"):
                 db.delete_official(del_id)
@@ -229,7 +230,7 @@ with tab_add:
 
         st.divider()
         uploaded_photo = st.file_uploader("पासपोर्ट साइज फोटो (Optional)", type=['jpg', 'png'])
-        submit_btn = st.form_submit_button("💾 सुरक्षित गर्नुहोस् (Save)", type="primary", use_container_width=True)
+        submit_btn = st.form_submit_button("💾 सुरक्षित गर्नुहोस् (Save)", type="primary", width="stretch")
 
         if submit_btn:
             if not p_name or not iemis or not school: 
@@ -505,20 +506,23 @@ with tab_bulk:
             edited_df = st.data_editor(
                 df_matrix, 
                 column_config=config, 
-                use_container_width=False, 
+                width="content", 
                 height=500
             )
             
             st.markdown("---")
-            if st.button("💾 सबै परिवर्तनहरू सुरक्षित गर्नुहोस् (Save Bulk Edits)", type="primary", use_container_width=True):
+            if st.button("💾 सबै परिवर्तनहरू सुरक्षित गर्नुहोस् (Save Bulk Edits)", type="primary", width="stretch"):
                 with st.spinner("डाटाबेस अपडेट हुँदैछ... कृपया पर्खनुहोस्"):
                     edited_df_reset = edited_df.reset_index()
                     for _, row in edited_df_reset.iterrows():
                         p_id = int(row['ID'])
                         selected_evts = [e_code for e_code in event_cols if row[e_code] == True]
-                        db.update_player_registrations(p_id, selected_evts)
+                        
+                        # 💡 जादु यहाँ छ: p_id र selected_evts को बीचमा 'sel_mun_id' थपियो!
+                        db.update_player_registrations(p_id, sel_mun_id, selected_evts)
                         
                     st.success("✅ बल्क इडिट सफलतापूर्वक सेभ भयो!")
+                    time.sleep(1) # १ सेकेन्ड पर्खेर रिफ्रेस गर्ने
                     st.rerun()
 
             # ==========================================
@@ -544,7 +548,7 @@ with tab_bulk:
                         sum_data.append({"इभेन्ट (Event)": ev_name, "सहभागी संख्या": count})
                 
                 if sum_data:
-                    st.dataframe(pd.DataFrame(sum_data), hide_index=True, use_container_width=True)
+                    st.dataframe(pd.DataFrame(sum_data), hide_index=True, width="stretch")
                 else:
                     st.info("कुनै पनि इभेन्टमा खेलाडी दर्ता भएका छैनन्।")
             
@@ -554,7 +558,7 @@ with tab_bulk:
                 
                 if zero_events:
                     zero_data = [{"खाली इभेन्टहरू": df_events[df_events['code']==e_code]['name'].iloc[0]} for e_code in zero_events]
-                    st.dataframe(pd.DataFrame(zero_data), hide_index=True, use_container_width=True)
+                    st.dataframe(pd.DataFrame(zero_data), hide_index=True, width="stretch")
                 else:
                     st.success("🎉 उत्कृष्ट! सबै इभेन्टहरूमा खेलाडी दर्ता भएका छन्।")
                     
@@ -591,7 +595,7 @@ with tab_view:
         df_players['Class'] = df_players['Class'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
         df_players['IEMIS ID'] = df_players['IEMIS ID'].astype(str).str.replace(r'\.0$', '', regex=True).replace('nan', '')
         
-        st.dataframe(df_players, use_container_width=True, hide_index=True)
+        st.dataframe(df_players, width="stretch", hide_index=True)
         st.write(f"कुल खेलाडी संख्या: **{len(df_players)}**")
 
 # ==========================================

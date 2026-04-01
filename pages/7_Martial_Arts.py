@@ -184,7 +184,7 @@ with col_main:
                     is_sel = (st.session_state.ma_discipline == match_key)
                     btn_type = "primary" if is_sel else "secondary"
                     
-                    if st.button(label, key=f"btn_{match_key}", type=btn_type, use_container_width=True):
+                    if st.button(label, key=f"btn_{match_key}", type=btn_type, width="stretch"):
                         st.session_state.ma_discipline = match_key
                         st.session_state.ma_gender = None 
                         st.rerun()
@@ -222,7 +222,7 @@ with col_gen:
         btn_type = "primary" if is_sel else "secondary"
         disabled = st.session_state.ma_discipline is None
         
-        if st.button(label, key=f"btn_gen_{gen}", type=btn_type, use_container_width=True, disabled=disabled):
+        if st.button(label, key=f"btn_gen_{gen}", type=btn_type, width="stretch", disabled=disabled):
             st.session_state.ma_gender = gen
             st.rerun()
 

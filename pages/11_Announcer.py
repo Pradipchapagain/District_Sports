@@ -113,7 +113,7 @@ with tab_ceremony:
                 c_txt, c_btn = st.columns([4, 1.2])
                 c_txt.markdown(f"**⏰ {item['schedule_time']} | {item['title']}**")
                 c_txt.caption(item['description'])
-                if c_btn.button("📺 Broadcast", key=f"cer_{index}", use_container_width=True):
+                if c_btn.button("📺 Broadcast", key=f"cer_{index}", width="stretch"):
                     ls.set_announcement(f"अहिले भइरहेको कार्यक्रम: {item['title']}", item['description'])
                     st.toast(f"✅ '{item['title']}' टिभीमा पठाइयो!")
 
@@ -132,14 +132,14 @@ with tab_schedule:
     if db_sch.empty:
         st.info(f"{selected_day} को लागि कुनै खेल तालिका उपलब्ध छैन।")
     else:
-        st.dataframe(db_sch[['schedule_time', 'title', 'description']], use_container_width=True, hide_index=True)
+        st.dataframe(db_sch[['schedule_time', 'title', 'description']], width="stretch", hide_index=True)
         
         c_show, c_hide = st.columns(2)
-        if c_show.button(f"📺 {selected_day} को कार्ड टिभीमा देखाउनुहोस्", type="primary", use_container_width=True):
+        if c_show.button(f"📺 {selected_day} को कार्ड टिभीमा देखाउनुहोस्", type="primary", width="stretch"):
             ls.trigger_schedule_display(selected_day)
             st.success(f"✅ {selected_day} को कार्डहरू टिभीमा कुदिरहेका छन्!")
             
-        if c_hide.button("❌ तालिका हटाउनुहोस्", use_container_width=True):
+        if c_hide.button("❌ तालिका हटाउनुहोस्", width="stretch"):
             ls.clear_schedule_display()
             st.toast("तालिका हटाइयो।")
 
@@ -152,14 +152,14 @@ with tab_custom:
     c_desc = st.text_area("विवरण (Sub-title):", placeholder="थप जानकारी यहाँ लेख्नुहोस्...")
     
     col_c1, col_c2 = st.columns(2)
-    if col_c1.button("📢 सूचना पठाउनुहोस्", type="primary", use_container_width=True):
+    if col_c1.button("📢 सूचना पठाउनुहोस्", type="primary", width="stretch"):
         if c_title:
             ls.set_announcement(c_title, c_desc)
             st.success("✅ सूचना टिभीमा पठाइयो!")
         else:
             st.error("शीर्षक अनिवार्य छ!")
             
-    if col_c2.button("🧹 सूचना सफा गर्नुहोस्", use_container_width=True):
+    if col_c2.button("🧹 सूचना सफा गर्नुहोस्", width="stretch"):
         ls.clear_announcement()
         st.toast("सूचना हटाइयो।")
 
@@ -169,7 +169,7 @@ with tab_tv_remote:
     r_col1, r_col2, r_col3, r_col4, r_col5 = st.columns(5)
     
     with r_col1:
-        if st.button("🏆 Clear Podium", use_container_width=True, type="primary"):
+        if st.button("🏆 Clear Podium", width="stretch", type="primary"):
             # 💡 यहाँ 'podium' को सट्टा 'podium_data' हुनुपर्छ
             force_clear_state('podium_data')
             st.success("✅ पोडियम हटाइयो!")
@@ -177,28 +177,28 @@ with tab_tv_remote:
             st.rerun()
             
     with r_col2:
-        if st.button("📢 Clear Call", use_container_width=True):
+        if st.button("📢 Clear Call", width="stretch"):
             force_clear_state('active_call') 
             st.success("✅ कल म्यासेज हटाइयो!")
             time.sleep(0.5)
             st.rerun()
             
     with r_col3:
-        if st.button("💬 Clear Msg", use_container_width=True):
+        if st.button("💬 Clear Msg", width="stretch"):
             force_clear_state('announcement')
             st.success("✅ सूचना हटाइयो!")
             time.sleep(0.5)
             st.rerun()
             
     with r_col4:
-        if st.button("📊 Clear Match", use_container_width=True):
+        if st.button("📊 Clear Match", width="stretch"):
             force_clear_state('match_result') 
             st.success("✅ म्याच नतिजा हटाइयो!")
             time.sleep(0.5)
             st.rerun()
             
     with r_col5:
-        if st.button("🔄 Full Reset", use_container_width=True):
+        if st.button("🔄 Full Reset", width="stretch"):
             force_clear_state('ALL')
             st.success("✅ टिभी पूर्ण रूपमा रिसेट भयो!")
             time.sleep(0.5)

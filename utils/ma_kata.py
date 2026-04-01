@@ -24,7 +24,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
 
     if not is_voting_open:
         st.info("⏳ खेलाडी प्रदर्शन गर्दैछन्... प्रदर्शन सकिएपछि भोटिङ खुल्ला गर्नुहोस्।")
-        if st.button("🚦 भोटिङ खुल्ला गर्नुहोस्", type="primary", use_container_width=True):
+        if st.button("🚦 भोटिङ खुल्ला गर्नुहोस्", type="primary", width="stretch"):
             try:
                 conn = db.get_connection()
                 c = conn.cursor()
@@ -76,7 +76,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
             
             c_conf, c_reset = st.columns(2)
             with c_conf:
-                if st.button("✅ पक्का (Confirm)", type="primary", use_container_width=True):
+                if st.button("✅ पक्का (Confirm)", type="primary", width="stretch"):
                     import utils.live_state as ls
                     ls.trigger_kata_result(current_event['name'], bout_id, p1.split(' [ID:')[0], p2.split(' [ID:')[0], votes, winner)
                     
@@ -95,7 +95,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
                     conn.commit(); conn.close()
                     st.toast("नतिजा सुरक्षित भयो!"); st.rerun()
             with c_reset:
-                if st.button("🔄 भोट रिसेट गर्नुहोस्", type="secondary", use_container_width=True):
+                if st.button("🔄 भोट रिसेट गर्नुहोस्", type="secondary", width="stretch"):
                     conn = db.get_connection()
                     c = conn.cursor()
                     c.execute("UPDATE live_match SET j1_vote=NULL, j2_vote=NULL, j3_vote=NULL, j4_vote=NULL, j5_vote=NULL WHERE event_code=%s AND bout_id=%s", (evt_code, bout_id))

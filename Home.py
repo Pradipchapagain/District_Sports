@@ -79,85 +79,84 @@ except Exception as e:
     st.error(f"Database Error: {e}")
 
 # ==========================================
-# 🔄 ०. अटो-लगइन लजिक (Auto-Login Check)
+# 🔄 ०. अटो-लगइन र कुकी लजिक (Smart Auto-Login)
 # ==========================================
-# 📂 Home.py को सुरक्षा घेरा (Security Guard)
-import streamlit as st
-
-# 💡 जादु: यदि URL मा 'TV' वा 'Display' शब्द छ भने लगइन चेक नगर्ने
-current_page = st.session_state.get("active_page", "")
-
-# यी पेजहरूलाई पासवर्ड चाहिँदैन (Public Pages)
+# 💡 जादु: यदि पब्लिक पेज (TV Display) हो भने लगइन चेक नगर्ने
 public_pages = ["Live_Display", "Mat_Scoreboard", "VB_Scoreboard", "KB_Scoreboard"]
+query_params = st.query_params
+is_public = any(p in query_params.get("page", "") for p in public_pages)
 
-# यदि पब्लिक पेज होइन र लगइन पनि छैन भने मात्र होममा फर्काउने
-if not any(p in st.query_params.get("page", [""])[0] for p in public_pages):
-    if 'logged_in' not in st.session_state or not st.session_state.logged_in:
-        # लगइन फर्म देखाउने कोड यहाँ हुन्छ...
-        pass
-
-
-# 💡 जादु यहाँ छ: कुकी पढ्न एकैछिन समय लाग्ने भएकोले 'auth_checked' फ्ल्याग राख्ने
-if 'auth_checked' not in st.session_state:
-    auth_data = controller.get('auth_user')
+# 💡 कुकीबाट डाटा तान्ने र सेसन सेट गर्ने
+if not st.session_state.get('logged_in', False) and not is_public:
+    try:
+        auth_data = controller.get('auth_user')
+    except TypeError:
+        # यदि कुकिज रेडी छैन वा None छ भने क्र्यास हुन नदिने
+        auth_data = None
     if auth_data and isinstance(auth_data, dict):
+        # कुकीमा भएको डाटालाई सेसनमा भर्ने
         st.session_state.logged_in = True
         st.session_state.user_role = auth_data.get('role')
         st.session_state.username = auth_data.get('username')
         st.session_state.municipality_id = auth_data.get('muni_id')
-    else:
-        st.session_state.logged_in = False
-    
-    st.session_state.auth_checked = True
+        # 💡 कुकीबाट मोड पनि तान्ने (LOCAL वा CLOUD)
+        st.session_state.db_mode = auth_data.get('db_mode', 'CLOUD')
+        
+        # सिधै ड्यासबोर्ड वा पहिलो पेजमा पठाउन
+        st.rerun()
 
-# डिफल्ट भ्यालुहरू
+# डिफल्ट भ्यालुहरू (सेसन खाली नहोस् भनेर)
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'user_role' not in st.session_state: st.session_state.user_role = 'Guest'
-if 'username' not in st.session_state: st.session_state.username = None
-if 'municipality_id' not in st.session_state: st.session_state.municipality_id = None
+if 'db_mode' not in st.session_state: st.session_state.db_mode = 'CLOUD' # डिफल्ट मोड
 
 # ==========================================
 # 🔐 १. लगइन पेज (Login UI)
 # ==========================================
 def login_page_ui():
-    DISTRICT_NAME = config.CONFIG.get('DEFAULT_DISTRICT', 'Ilam')
-    EVENT_NAME = config.CONFIG.get('EVENT_TITLE_NP', 'राष्ट्रपति रनिङ शिल्ड प्रतियोगिता')
-    ORGANIZER_NAME = config.CONFIG.get('ORGANIZER_NAME_NP', 'जिल्ला खेलकुद विकास समिति')
+    # ... हजुरको साविकको डिजाइन (Styles, District Name, etc.) ...
     
-    st.markdown(f"""
-        <style>.login-container {{ background: linear-gradient(135deg, #f8fafc, #e2e8f0); padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); margin-bottom: 30px; text-align:center; }}</style>
-        <div class="login-container">
-            <div style="background:#E3F2FD; padding:6px 15px; border-radius:20px; border:1px solid #1E88E5; color:#1565C0; font-weight:bold; display:inline-block; margin-bottom:15px;">📍 जिल्ला: {DISTRICT_NAME}</div>
-            <h1 style="color:#1E88E5; margin:0; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);">🏆 {EVENT_NAME}</h1>
-            <h3 style="color:#b91c1c; margin-top:10px;">आयोजक: {ORGANIZER_NAME}</h3>
-        </div>
-    """, unsafe_allow_html=True)
-
     c1, c_mid, c3 = st.columns([1, 1.2, 1])
     with c_mid:
         with st.form("login_form", border=True):
             st.markdown("<h3 style='text-align: center; color:#334155; margin-bottom:20px;'>🔐 प्रणालीमा प्रवेश गर्नुहोस्</h3>", unsafe_allow_html=True)
+            
+            # 💡 डाटाबेस छान्ने विकल्प (Last chosen mode सम्झिने गरी)
+            default_db_idx = 1 if st.session_state.get('db_mode') == "LOCAL" else 0
+            db_choice = st.radio("डाटा स्रोत (Data Source):", 
+                                 ["🌐 CLOUD (Online)", "🏠 LOCAL (Offline)"], 
+                                 index=default_db_idx, horizontal=True)
+            
             username = st.text_input("👤 युजरनेम (Username)")
             password = st.text_input("🔑 पासवर्ड (Password)", type="password")
             
-            if st.form_submit_button("लगइन (Login) 🚀", type="primary", use_container_width=True):
+            if st.form_submit_button("लगइन (Login) 🚀", type="primary", width="stretch"):
+                # छानेको मोड सेसनमा राख्ने
+                selected_mode = "CLOUD" if "CLOUD" in db_choice else "LOCAL"
+                st.session_state.db_mode = selected_mode
+                
+                # 💡 यहाँ db.authenticate_user(username, password) भित्र db_mode प्रयोग हुन्छ
                 user = db.authenticate_user(username, password)
+                
                 if user:
                     st.session_state.logged_in = True
                     st.session_state.user_role = user['role']
                     st.session_state.username = user['username']
                     st.session_state.municipality_id = user['municipality_id']
                     
-                    # 💡 ब्राउजर कुकीमा सेभ गर्ने (७ दिनको लागि)
+                    # 💡 कुकीमा सबै डाटा सेभ गर्ने
                     controller.set('auth_user', {
                         'username': user['username'],
                         'role': user['role'],
-                        'muni_id': user['municipality_id']
-                    }, max_age=604800)
+                        'muni_id': user['municipality_id'],
+                        'db_mode': selected_mode  # मोड सेभ गर्न नबिर्सने
+                    }, max_age=604800) # ७ दिनको लागि
                     
+                    st.success("प्रवेश सफल! ड्यासबोर्ड खुल्दैछ...")
                     st.rerun() 
                 else:
                     st.error("❌ युजरनेम वा पासवर्ड मिलेन।")
-
+                    
 # ==========================================
 # 🧭 २. DYNAMIC NAVIGATION
 # ==========================================
@@ -219,14 +218,35 @@ else:
 if st.session_state.get('logged_in', False):
     with st.sidebar:
         st.markdown("<hr style='margin-bottom:10px;'>", unsafe_allow_html=True)
-        st.markdown(f"**Logged in as:** <span style='color:#1E88E5; font-weight:600;'>{st.session_state.username}</span>", unsafe_allow_html=True)
-        if st.button("🚪 लगआउट (Logout)", use_container_width=True):
+        st.markdown(f"**Logged in as:** <span style='color:#1E88E5; font-weight:600;'>{st.session_state.username.upper()}</span>", unsafe_allow_html=True)
+        
+        # 💡 लगआउट बटनमा क्लिक गर्दा हुने जादु
+        if st.button("🚪 लगआउट (Logout)", width="stretch", type="secondary"):
+            # १. ब्राउजर कुकी सफा गर्ने
             controller.remove('auth_user')
-            st.session_state.clear()
-            st.rerun()
             
-        st.markdown("""<div class="sidebar-footer">PRS CMS v3.1 Pro<br>Developed for DSDC Ilam</div>""", unsafe_allow_html=True)
+            # २. सेसन स्टेटका सबै कुराहरू मेटाउने
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            
+            # ३. लगआउट भएको निश्चित गर्न एउटा सानो फ्ल्याग राख्ने (Optional)
+            st.session_state['logged_in'] = False
+            
+            # ४. मुख्य कुरा: URL बाट सबै प्यारामीटर हटाएर होममा रिफ्रेस गर्ने
+            st.query_params.clear()
+            st.rerun() # यसले अब सिधै लगइन पेजमा फाल्छ
+            
+        st.markdown(f"""<div style='text-align:center; font-size:12px; color:gray; margin-top:20px;'>
+            PRS CMS v3.1 Pro<br>Developed for DSDC Ilam<br>
+            <small>Mode: {st.session_state.get('db_mode', 'Unknown')}</small>
+        </div>""", unsafe_allow_html=True)
 
-# नेभिगेसन चलाउने
-pg = st.navigation(pages)
-pg.run()
+# ------------------------------------------
+# 🏁 नेभिगेसन चलाउने (Navigation Execution)
+# ------------------------------------------
+try:
+    pg = st.navigation(pages)
+    pg.run()
+except Exception as e:
+    # यदि लगआउट गर्दा कुनै पेज हरायो भने सिधै लगइनमा पठाउने
+    st.rerun()

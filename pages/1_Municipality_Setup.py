@@ -168,7 +168,7 @@ with tab2:
             if not needs_fix_df.empty:
                 st.error(f"⚠️ {len(needs_fix_df)} वटा पालिकाको युजरनेम मिलाउन बाँकी छ!")
                 
-                if st.button("🛠️ युजरनेमहरू अटोमेटिक सच्याउनुहोस् (Fix Usernames)", type="primary", use_container_width=True):
+                if st.button("🛠️ युजरनेमहरू अटोमेटिक सच्याउनुहोस् (Fix Usernames)", type="primary", width="stretch"):
                     import re
                     conn = db.get_connection()
                     c = conn.cursor()
@@ -205,7 +205,7 @@ with tab2:
                         conn.close()
 
             # डाटा देखाउने टेबल
-            st.dataframe(df_cred, use_container_width=True, hide_index=True)
+            st.dataframe(df_cred, width="stretch", hide_index=True)
             st.caption(f"💡 अटो सेटअपबाट बनेका सबैको सुरुवाती पासवर्ड **{DEFAULT_PASSWORD}** हुन्छ।")
 
     with c_reset:
@@ -217,7 +217,7 @@ with tab2:
                 sel_user = st.selectbox("पालिकाको युजरनेम छान्नुहोस्:", df_cred['Username'].tolist())
                 new_pass = st.text_input("नयाँ पासवर्ड (New Password)", value="admin123")
                 
-                if st.form_submit_button("पासवर्ड रिसेट गर्नुहोस्", type="primary", use_container_width=True):
+                if st.form_submit_button("पासवर्ड रिसेट गर्नुहोस्", type="primary", width="stretch"):
                     if not new_pass:
                         st.error("पासवर्ड खाली राख्न मिल्दैन।")
                     else:

@@ -200,13 +200,13 @@ def render_panel(evt_code, current_event, players_df, bout_info=None):
     with c_t2: st.markdown(f"<div class='timer-box'>{timer_display_down}</div>", unsafe_allow_html=True)
     b_t1, b_t2, b_t3 = st.columns([1, 1, 1])
     with b_t1:
-        if st.button("▶️ Start", use_container_width=True): 
+        if st.button("▶️ Start", width="stretch"): 
             st.session_state[f"{prefix}_timer_running"] = True; st.session_state[f"{prefix}_last_start_time"] = time.time(); st.rerun()
     with b_t2:
-        if st.button("⏸️ Pause", use_container_width=True): 
+        if st.button("⏸️ Pause", width="stretch"): 
             st.session_state[f"{prefix}_timer_running"] = False; sync_to_db(); st.rerun()
     with b_t3:
-        if st.button("🛑 End", type="primary", use_container_width=True): 
+        if st.button("🛑 End", type="primary", width="stretch"): 
             st.session_state[f"{prefix}_timer_running"] = False; sync_to_db(); st.rerun()
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
@@ -307,11 +307,11 @@ def render_panel(evt_code, current_event, players_df, bout_info=None):
     st.divider()
     with st.expander("📝 Match Log & Activity History", expanded=False):
         if st.session_state.fight_logs:
-            st.dataframe(pd.DataFrame(st.session_state.fight_logs), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(st.session_state.fight_logs), width="stretch", hide_index=True)
             
     c_res, c_rst = st.columns([3, 1])
     with c_res:
-        if st.button("💾 Save Match Result to Bracket", type="primary", use_container_width=True):
+        if st.button("💾 Save Match Result to Bracket", type="primary", width="stretch"):
             win_info = None
             winner_full_name_for_bracket = ""
             
@@ -376,7 +376,7 @@ def render_panel(evt_code, current_event, players_df, bout_info=None):
                 st.warning("⚠️ स्कोर बराबर छ (Tie)। कृपया Hantei वा Golden Point मार्फत विजेता छुट्ट्याउनुहोस्।")
                 
     with c_rst:
-        if st.button("🔄 Reset Scoreboard", type="secondary", use_container_width=True):
+        if st.button("🔄 Reset Scoreboard", type="secondary", width="stretch"):
             st.session_state.fight_scores = {k: (None if k=='senshu' else 0) for k in st.session_state.fight_scores}
             st.session_state.fight_logs = []
             st.session_state[f"{prefix}_elapsed_time"] = 0.0

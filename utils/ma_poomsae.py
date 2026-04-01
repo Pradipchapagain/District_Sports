@@ -112,7 +112,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
 
     # Broadcast Button
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("📡 Broadcast Scores to TV", type="secondary", use_container_width=True):
+    if st.button("📡 Broadcast Scores to TV", type="secondary", width="stretch"):
         sync_live_display(total_a, total_b)
 
     # ==========================================
@@ -122,7 +122,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
     
     c_res, c_rst = st.columns([3, 1])
     with c_res:
-        if st.button("💾 Save Match Result & Confirm", type="primary", use_container_width=True):
+        if st.button("💾 Save Match Result & Confirm", type="primary", width="stretch"):
             win_id = None
             
             # 💡 WT 2026 Winner Logic (Tie-Breaker: Presentation Score)
@@ -185,7 +185,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
                 st.rerun()
 
     with c_rst:
-        if st.button("🔄 Reset Match", type="secondary", use_container_width=True):
+        if st.button("🔄 Reset Match", type="secondary", width="stretch"):
             keys_to_delete = [k for k in st.session_state.keys() if k.startswith(prefix)]
             for k in keys_to_delete: del st.session_state[k]
             st.rerun()

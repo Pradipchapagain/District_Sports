@@ -103,7 +103,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
     # 📡 LIVE TV SYNC (PostgreSQL)
     # ==========================================
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("📡 Broadcast Scores to TV", type="secondary", use_container_width=True):
+    if st.button("📡 Broadcast Scores to TV", type="secondary", width="stretch"):
         conn = db.get_connection()
         cur = conn.cursor()
         # ताओलुको स्कोर '10.00' जस्तो आउने भएकोले यसलाई STRING/VARCHAR को रूपमा पठाउनुपर्छ, 
@@ -129,7 +129,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
     st.divider()
     c_res, c_rst = st.columns([3, 1])
     with c_res:
-        if st.button("💾 Save Match Result & Confirm", type="primary", use_container_width=True):
+        if st.button("💾 Save Match Result & Confirm", type="primary", width="stretch"):
             if f_score_a == 0 and f_score_b == 0:
                 st.warning("⚠️ कृपया अङ्क प्रविष्ट गर्नुहोस्।")
                 return
@@ -182,7 +182,7 @@ def render_panel(evt_code, current_event, players_df, bout_info):
                 st.success("✅ नतिजा सुरक्षित भयो!"); st.rerun()
 
     with c_rst:
-        if st.button("🔄 Reset Match", type="secondary", use_container_width=True):
+        if st.button("🔄 Reset Match", type="secondary", width="stretch"):
             keys_to_del = [k for k in st.session_state.keys() if k.startswith(prefix)]
             for k in keys_to_del: del st.session_state[k]
             st.rerun()

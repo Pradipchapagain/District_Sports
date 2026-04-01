@@ -49,39 +49,66 @@ from streamlit_cookies_controller import CookieController
 controller = CookieController()
 
 # --- Welcome Bar ---
-c_wel, c_btn = st.columns([4, 1])
+c_wel, c_btn = st.columns([3.5, 1.5]) # बटनलाई अलि बढी ठाउँ दिइएको
+
 with c_wel:
     role_color = "#1E88E5" if st.session_state.user_role == 'admin' else "#2E7D32"
     role_text = "प्रणाली प्रशासक (Admin)" if st.session_state.user_role == 'admin' else "पालिका प्रयोगकर्ता"
-    st.markdown(f"<h3 style='margin:0;'>👋 स्वागत छ, <span style='color:{role_color};'>{st.session_state.username.upper()}</span> ({role_text})</h3>", unsafe_allow_html=True)
-    # 💡 वास्तवमै कुन DB कनेक्टेड छ भनेर चेक गर्ने लजिक
-    actual_mode = "Unknown"
-    conn = db.get_connection()
-    if conn:
-        dsn = conn.get_dsn_parameters()
-        host = dsn.get('host')
-        # यदि होस्टमा 'localhost' वा '127.0.0.1' छ भने त्यो LOCAL हो
-        if host in ['localhost', '127.0.0.1']:
-            actual_mode = "🏠 LOCAL (कम्प्युटर)"
-        else:
-            actual_mode = "🌐 CLOUD (अनलाइन - Neon)"
-        conn.close()
     
-    st.write(f"📡 **जडान मोड (Connection):** {actual_mode}")
+    # 👋 स्वागत सन्देश
+    st.markdown(f"""
+        <div style='display: flex; align-items: center; gap: 10px;'>
+            <h2 style='margin:0;'>👋 स्वागत छ, <span style='color:{role_color};'>{st.session_state.username.upper()}</span></h2>
+            <span style='background-color:{role_color}22; color:{role_color}; padding: 2px 10px; border-radius: 15px; font-size: 14px; font-weight: bold; border: 1px solid {role_color};'>
+                {role_text}
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 💡 वास्तवमै कुन DB कनेक्टेड छ भनेर चेक गर्ने लजिक
+    actual_mode = "🔍 जाँच गर्दै..."
+    conn = db.get_connection()
+    status_color = "#6c757d" # Default Gray
+    
+    if conn:
+        try:
+            dsn = conn.get_dsn_parameters()
+            host = dsn.get('host')
+            if host in ['localhost', '127.0.0.1', '::1']:
+                actual_mode = "🏠 LOCAL (लोकल सर्भर)"
+                status_color = "#f39c12" # Orange for Local
+            else:
+                actual_mode = "🌐 CLOUD (अनलाइन - Neon)"
+                status_color = "#27ae60" # Green for Cloud
+            conn.close()
+        except:
+            actual_mode = "⚠️ Connection Error"
+            status_color = "#e74c3c"
+    
+    # जडान मोडलाई स्टाइलिस Badge मा देखाउने
+    st.markdown(f"""
+        <p style='margin-top: 5px; font-size: 15px;'>
+            📡 जडान मोड: <b style='color:{status_color};'>{actual_mode}</b>
+        </p>
+    """, unsafe_allow_html=True)
 
 with c_btn:
-    if st.button("🚪 सुरक्षित लगआउट", use_container_width=True):
-        # १. सेसन क्लिन गर्ने
-        st.session_state.clear()
-        
-        # २. ब्राउजरबाट कुकी मेटाउने (अटो-लगइन रोक्न)
+    st.write("") # माथिको मार्जिन मिलाउन
+    if st.button("🚪 सुरक्षित लगआउट", width="stretch", type="secondary", help="प्रणालीबाट सुरक्षित रूपमा बाहिर निस्कनुहोस्"):
+        # १. ब्राउजर कुकी हटाउने (अटो-लगइन रोक्न)
         controller.remove('auth_user')
         
-        # ३. होम पेजमा फर्काउने (st.rerun() को सट्टा st.switch_page())
-        #st.switch_page("Home.py")
+        # २. सेसन पूरै सफा गर्ने
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+            
+        # ३. क्यास र प्यारामीटर सफा गरेर होममा रिफ्रेस गर्ने
+        st.query_params.clear() 
+        st.success("लगआउट हुँदैछ...")
         st.rerun()
 
-st.markdown("<hr style='margin: 15px 0 30px 0;'>", unsafe_allow_html=True)
+# 📏 तेर्सो रेखा (Horizontal Rule)
+st.markdown("<hr style='margin: 10px 0 30px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
 # ==========================================
 # 📡 ३. डाटा प्रोसेसिङ (Cached & Parameterized)
@@ -192,7 +219,7 @@ with c_chart1:
             color=alt.Color(field="category", type="nominal", legend=alt.Legend(title="विधा")),
             tooltip=['category', 'count']
         ).properties(height=300).interactive()
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
     else:
         st.info("डेटा उपलब्ध छैन।")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -203,13 +230,13 @@ with c_chart2:
         st.subheader("🥇 शीर्ष ५ पदक तालिका (Live)")
         df_t = dash_data['tally']
         if not df_t.empty and df_t['कुल'].sum() > 0:
-            st.dataframe(df_t.style.highlight_max(axis=0, subset=['स्वर्ण'], color='#fef08a'), use_container_width=True, hide_index=True)
+            st.dataframe(df_t.style.highlight_max(axis=0, subset=['स्वर्ण'], color='#fef08a'), width="stretch", hide_index=True)
         else:
             st.info("कुनै पनि नतिजा अपडेट भएको छैन।")
     else:
         st.subheader("🏅 तपाईंको पालिकाको नतिजा")
         if not dash_data['tally'].empty:
-            st.dataframe(dash_data['tally'], use_container_width=True, hide_index=True)
+            st.dataframe(dash_data['tally'], width="stretch", hide_index=True)
         else:
             st.info("तपाईंको पालिकाले हालसम्म कुनै पदक जितेको छैन।")
     st.markdown('</div>', unsafe_allow_html=True)
